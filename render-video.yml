@@ -17,12 +17,40 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install FFmpeg
+        shell: bash
         run: |
+          set -euxo pipefail
+
+          echo "=== Before install ==="
+          command -v ffmpeg || true
+          command -v ffprobe || true
+
+          echo
+          echo "=== apt update ==="
           sudo apt-get update
+
+          echo
+          echo "=== apt install ffmpeg ==="
           sudo apt-get install -y ffmpeg
+
+          echo
+          echo "=== Verify installed files ==="
+          dpkg -L ffmpeg | grep -E '/ffmpeg$|/ffprobe$' || true
+
+          echo
+          echo "=== Verify binaries ==="
+          command -v ffmpeg
+          command -v ffprobe
+
+          echo
+          echo "=== Versions ==="
+          ffmpeg -version | head -n 3
+          ffprobe -version | head -n 3
 
       - name: Show environment
         run: |
+          set -euxo pipefail
+
           echo "=== OS ==="
           uname -a
 
@@ -32,28 +60,32 @@ jobs:
 
           echo
           echo "=== FFmpeg ==="
+          command -v ffmpeg
           ffmpeg -version | head -n 5
 
           echo
           echo "=== FFprobe ==="
+          command -v ffprobe
           ffprobe -version | head -n 5
 
       - name: Show repository files
         run: |
+          set -euxo pipefail
+
           echo "=== Repository ==="
           find . -maxdepth 3 -type f | sort
 
           echo
           echo "=== Input ==="
-          ls -lah input || true
+          ls -lah input
 
           echo
           echo "=== Renderer ==="
-          ls -lah renderer || true
+          ls -lah renderer
 
       - name: Verify input files
         run: |
-          set -eux
+          set -euxo pipefail
 
           test -f input/photo.png
           test -f input/narration.wav
@@ -63,7 +95,7 @@ jobs:
 
       - name: Inspect input files
         run: |
-          set -eux
+          set -euxo pipefail
 
           echo "=== Image ==="
           file input/photo.png
@@ -85,14 +117,29 @@ jobs:
             -of default=noprint_wrappers=1 \
             input/narration.wav
 
+      - name: Test FFmpeg directly
+        run: |
+          set -euxo pipefail
+
+          ffmpeg \
+            -hide_banner \
+            -loglevel error \
+            -f lavfi \
+            -i color=c=black:s=320x240:d=1 \
+            -f null \
+            -
+
+          echo "Direct FFmpeg test succeeded."
+
       - name: FFmpeg Render
         run: |
-          set -eux
+          set -euxo pipefail
+
           python3 renderer/render_video.py
 
       - name: Inspect output
         run: |
-          set -eux
+          set -euxo pipefail
 
           test -f output/output.mp4
 
