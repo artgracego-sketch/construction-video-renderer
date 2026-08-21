@@ -21,43 +21,49 @@ OUTPUT = OUTPUT_DIR / "output.mp4"
 
 def get_ffmpeg_path() -> str:
     """
-    Pythonから確実にFFmpeg実行ファイルを取得する。
-
-    優先順位:
-      1. imageio-ffmpegが管理するFFmpeg
-      2. OSのPATHにあるffmpeg
+    imageio-ffmpegが管理するFFmpegを優先する。
+    見つからない場合のみOSのPATHを確認する。
     """
 
     try:
         ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
 
         if ffmpeg_path:
-            path = Path(ffmpeg_path)
+
+            path = Path(
+                ffmpeg_path
+            )
 
             if path.exists():
+
                 return str(path)
 
     except Exception as exc:
+
         print(
             "imageio-ffmpeg lookup failed:",
-            exc,
+            exc
         )
 
 
-    system_ffmpeg = shutil.which("ffmpeg")
+    system_ffmpeg = shutil.which(
+        "ffmpeg"
+    )
+
 
     if system_ffmpeg:
+
         return system_ffmpeg
 
 
     raise FileNotFoundError(
-        "FFmpeg executable was not found.\n"
-        "imageio-ffmpeg path lookup failed "
-        "and system PATH does not contain ffmpeg."
+        "FFmpeg executable was not found."
     )
 
 
-def run_ffmpeg(command: list[str]) -> None:
+def run_ffmpeg(
+    command: list[str]
+) -> None:
 
     print(
         "Running:"
@@ -67,58 +73,82 @@ def run_ffmpeg(command: list[str]) -> None:
         " ".join(command)
     )
 
+
     result = subprocess.run(
+
         command,
+
         stdout=subprocess.PIPE,
+
         stderr=subprocess.STDOUT,
+
         text=True,
-        check=False,
+
+        check=False
+
     )
+
 
     print(
         result.stdout
     )
 
-    if result.returncode != 0:
+
+    if (
+        result.returncode != 0
+    ):
 
         raise RuntimeError(
-            "FFmpeg failed with exit code "
-            f"{result.returncode}"
+
+            "FFmpeg failed with "
+            f"exit code {result.returncode}"
+
         )
 
 
 def validate_inputs() -> None:
 
     required = [
+
         PHOTO,
         AUDIO,
-        SUBTITLE,
+        SUBTITLE
+
     ]
 
 
     missing = [
+
         str(path)
+
         for path in required
+
         if not path.exists()
+
     ]
 
 
     if missing:
 
         raise FileNotFoundError(
+
             "Missing input files:\n"
             +
             "\n".join(
                 missing
             )
+
         )
 
 
 def render() -> None:
 
     OUTPUT_DIR.mkdir(
+
         parents=True,
-        exist_ok=True,
+
+        exist_ok=True
+
     )
 
 
@@ -140,25 +170,17 @@ def render() -> None:
 
         "-y",
 
-        # -----------------------------------------------------
-        # Still image
-        # -----------------------------------------------------
         "-loop",
         "1",
 
         "-i",
         str(PHOTO),
 
-        # -----------------------------------------------------
-        # Narration
-        # -----------------------------------------------------
         "-i",
         str(AUDIO),
 
-        # -----------------------------------------------------
-        # Video
-        # -----------------------------------------------------
         "-vf",
+
         (
             "scale=1080:1920:"
             "force_original_aspect_ratio=decrease,"
@@ -168,30 +190,18 @@ def render() -> None:
             + str(SUBTITLE)
         ),
 
-        # -----------------------------------------------------
-        # Fixed maximum duration
-        # -----------------------------------------------------
         "-t",
         "15",
 
-        # -----------------------------------------------------
-        # FPS
-        # -----------------------------------------------------
         "-r",
         "30",
 
-        # -----------------------------------------------------
-        # Mapping
-        # -----------------------------------------------------
         "-map",
         "0:v:0",
 
         "-map",
         "1:a:0",
 
-        # -----------------------------------------------------
-        # Video encoding
-        # -----------------------------------------------------
         "-c:v",
         "libx264",
 
@@ -201,30 +211,22 @@ def render() -> None:
         "-crf",
         "23",
 
-        # -----------------------------------------------------
-        # Audio encoding
-        # -----------------------------------------------------
         "-c:a",
         "aac",
 
         "-b:a",
         "128k",
 
-        # -----------------------------------------------------
-        # Compatibility
-        # -----------------------------------------------------
         "-pix_fmt",
         "yuv420p",
 
         "-movflags",
         "+faststart",
 
-        # -----------------------------------------------------
-        # Do not exceed shortest input
-        # -----------------------------------------------------
         "-shortest",
 
-        str(OUTPUT),
+        str(OUTPUT)
+
     ]
 
 
@@ -243,8 +245,7 @@ def inspect_output() -> None:
         )
 
 
-    size =
-        OUTPUT.stat().st_size
+    size = OUTPUT.stat().st_size
 
 
     if size <= 0:
