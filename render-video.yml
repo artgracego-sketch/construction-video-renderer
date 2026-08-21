@@ -16,56 +16,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Install FFmpeg
+      - name: Setup FFmpeg
+        uses: AnimMouse/setup-ffmpeg@v1
+
+      - name: Verify FFmpeg
         shell: bash
         run: |
           set -euxo pipefail
 
-          echo "=== Before install ==="
-          command -v ffmpeg || true
-          command -v ffprobe || true
-
-          echo
-          echo "=== apt update ==="
-          sudo apt-get update
-
-          echo
-          echo "=== apt install ffmpeg ==="
-          sudo apt-get install -y ffmpeg
-
-          echo
-          echo "=== Verify installed files ==="
-          dpkg -L ffmpeg | grep -E '/ffmpeg$|/ffprobe$' || true
-
-          echo
-          echo "=== Verify binaries ==="
+          echo "=== FFmpeg path ==="
           command -v ffmpeg
+
+          echo
+          echo "=== FFprobe path ==="
           command -v ffprobe
 
           echo
-          echo "=== Versions ==="
-          ffmpeg -version | head -n 3
-          ffprobe -version | head -n 3
-
-      - name: Show environment
-        run: |
-          set -euxo pipefail
-
-          echo "=== OS ==="
-          uname -a
-
-          echo
-          echo "=== Python ==="
-          python3 --version
-
-          echo
-          echo "=== FFmpeg ==="
-          command -v ffmpeg
+          echo "=== FFmpeg version ==="
           ffmpeg -version | head -n 5
 
           echo
-          echo "=== FFprobe ==="
-          command -v ffprobe
+          echo "=== FFprobe version ==="
           ffprobe -version | head -n 5
 
       - name: Show repository files
@@ -144,6 +115,9 @@ jobs:
           test -f output/output.mp4
 
           ls -lh output/output.mp4
+
+          echo
+          echo "=== Video probe ==="
 
           ffprobe \
             -v error \
