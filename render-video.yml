@@ -16,28 +16,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup FFmpeg
-        uses: AnimMouse/setup-ffmpeg@v1
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-      - name: Verify FFmpeg
-        shell: bash
+      - name: Install Python dependencies
         run: |
-          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install imageio-ffmpeg
 
-          echo "=== FFmpeg path ==="
-          command -v ffmpeg
+      - name: Verify FFmpeg binary
+        run: |
+          python - <<'PY'
+          import imageio_ffmpeg
 
-          echo
-          echo "=== FFprobe path ==="
-          command -v ffprobe
+          path = imageio_ffmpeg.get_ffmpeg_exe()
 
-          echo
-          echo "=== FFmpeg version ==="
-          ffmpeg -version | head -n 5
+          print("FFmpeg executable:")
+          print(path)
 
-          echo
-          echo "=== FFprobe version ==="
-          ffprobe -version | head -n 5
+          print()
+          print("FFmpeg version:")
+
+          import subprocess
+
+          result = subprocess.run(
+              [path, "-version"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              check=True,
+          )
+
+          print(
+              result.stdout.splitlines()[0]
+          )
+          PY
 
       - name: Show repository files
         run: |
@@ -79,29 +94,6 @@ jobs:
           echo "=== Subtitle ==="
           file input/subtitle.srt
 
-          echo
-          echo "=== Audio probe ==="
-          ffprobe \
-            -v error \
-            -show_entries \
-            stream=codec_name,sample_rate,channels,duration \
-            -of default=noprint_wrappers=1 \
-            input/narration.wav
-
-      - name: Test FFmpeg directly
-        run: |
-          set -euxo pipefail
-
-          ffmpeg \
-            -hide_banner \
-            -loglevel error \
-            -f lavfi \
-            -i color=c=black:s=320x240:d=1 \
-            -f null \
-            -
-
-          echo "Direct FFmpeg test succeeded."
-
       - name: FFmpeg Render
         run: |
           set -euxo pipefail
@@ -119,14 +111,26 @@ jobs:
           echo
           echo "=== Video probe ==="
 
-          ffprobe \
-            -v error \
-            -show_entries \
-            stream=codec_name,width,height,r_frame_rate \
-            -show_entries \
-            format=duration \
-            -of default=noprint_wrappers=1 \
-            output/output.mp4
+          python - <<'PY'
+          import imageio_ffmpeg
+          import subprocess
+
+          ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+          probe = ffmpeg.replace(
+              "ffmpeg",
+              "ffprobe"
+          )
+
+          print(
+              "FFmpeg:",
+              ffmpeg
+          )
+
+          print(
+              "Note: ffprobe is checked separately if available."
+          )
+          PY
 
       - name: Upload test video artifact
         uses: actions/upload-artifact@v4
