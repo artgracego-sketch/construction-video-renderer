@@ -9,45 +9,163 @@ permissions:
 jobs:
   render:
     name: FFmpeg Render
-    runs-on: ubuntu-latest
+
+    runs-on: ubuntu-24.04
 
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
-      - name: Show environment
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+
+        with:
+          python-version: "3.12"
+
+
+      - name: Install Python dependencies
         run: |
-          uname -a
-          ffmpeg -version | head -n 5
+
+          python -m pip install --upgrade pip
+
+          python -m pip install imageio-ffmpeg
+
+
+      - name: Verify FFmpeg binary
+        run: |
+
+          python - <<'PY'
+
+          import imageio_ffmpeg
+          import subprocess
+
+          path = (
+              imageio_ffmpeg
+              .get_ffmpeg_exe()
+          )
+
+          print(
+              "FFmpeg executable:"
+          )
+
+          print(path)
+
+          print()
+
+          result = subprocess.run(
+
+              [
+                  path,
+                  "-version"
+              ],
+
+              stdout=subprocess.PIPE,
+
+              stderr=subprocess.STDOUT,
+
+              text=True,
+
+              check=True
+
+          )
+
+          print(
+              result.stdout.splitlines()[0]
+          )
+
+          PY
+
+
+      - name: Show repository files
+        run: |
+
+          set -euxo pipefail
+
+          echo "=== Repository ==="
+
+          find . \
+            -maxdepth 3 \
+            -type f \
+            | sort
+
+          echo
+
+          echo "=== Input ==="
+
+          ls -lah input
+
+          echo
+
+          echo "=== Renderer ==="
+
+          ls -lah renderer
+
 
       - name: Verify input files
         run: |
+
+          set -euxo pipefail
+
           test -f input/photo.png
+
           test -f input/narration.wav
+
           test -f input/subtitle.srt
 
-      - name: Render MP4
+          echo "All input files exist."
+
+
+      - name: Inspect input files
         run: |
+
+          set -euxo pipefail
+
+          echo "=== Image ==="
+
+          file input/photo.png
+
+          echo
+
+          echo "=== Audio ==="
+
+          file input/narration.wav
+
+          echo
+
+          echo "=== Subtitle ==="
+
+          file input/subtitle.srt
+
+
+      - name: FFmpeg Render
+        run: |
+
+          set -euxo pipefail
+
           python3 renderer/render_video.py
+
 
       - name: Inspect output
         run: |
+
+          set -euxo pipefail
+
           test -f output/output.mp4
 
-          ffprobe \
-            -v error \
-            -show_entries \
-            stream=codec_name,width,height,r_frame_rate \
-            -show_entries \
-            format=duration \
-            -of default=noprint_wrappers=1 \
-            output/output.mp4
+          ls -lh output/output.mp4
+
 
       - name: Upload test video artifact
         uses: actions/upload-artifact@v4
+
         with:
+
           name: rendered-video
+
           path: output/output.mp4
+
           retention-days: 1
