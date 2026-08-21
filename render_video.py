@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
+
+import imageio_ffmpeg
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,9 +19,53 @@ SUBTITLE = INPUT_DIR / "subtitle.srt"
 OUTPUT = OUTPUT_DIR / "output.mp4"
 
 
+def get_ffmpeg_path() -> str:
+    """
+    Pythonから確実にFFmpeg実行ファイルを取得する。
+
+    優先順位:
+      1. imageio-ffmpegが管理するFFmpeg
+      2. OSのPATHにあるffmpeg
+    """
+
+    try:
+        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+
+        if ffmpeg_path:
+            path = Path(ffmpeg_path)
+
+            if path.exists():
+                return str(path)
+
+    except Exception as exc:
+        print(
+            "imageio-ffmpeg lookup failed:",
+            exc,
+        )
+
+
+    system_ffmpeg = shutil.which("ffmpeg")
+
+    if system_ffmpeg:
+        return system_ffmpeg
+
+
+    raise FileNotFoundError(
+        "FFmpeg executable was not found.\n"
+        "imageio-ffmpeg path lookup failed "
+        "and system PATH does not contain ffmpeg."
+    )
+
+
 def run_ffmpeg(command: list[str]) -> None:
-    print("Running:")
-    print(" ".join(command))
+
+    print(
+        "Running:"
+    )
+
+    print(
+        " ".join(command)
+    )
 
     result = subprocess.run(
         command,
@@ -28,21 +75,26 @@ def run_ffmpeg(command: list[str]) -> None:
         check=False,
     )
 
-    print(result.stdout)
+    print(
+        result.stdout
+    )
 
     if result.returncode != 0:
+
         raise RuntimeError(
-            f"FFmpeg failed with exit code "
+            "FFmpeg failed with exit code "
             f"{result.returncode}"
         )
 
 
 def validate_inputs() -> None:
+
     required = [
         PHOTO,
         AUDIO,
         SUBTITLE,
     ]
+
 
     missing = [
         str(path)
@@ -50,10 +102,15 @@ def validate_inputs() -> None:
         if not path.exists()
     ]
 
+
     if missing:
+
         raise FileNotFoundError(
             "Missing input files:\n"
-            + "\n".join(missing)
+            +
+            "\n".join(
+                missing
+            )
         )
 
 
@@ -64,8 +121,23 @@ def render() -> None:
         exist_ok=True,
     )
 
+
+    ffmpeg = get_ffmpeg_path()
+
+
+    print(
+        "FFmpeg executable:"
+    )
+
+    print(
+        ffmpeg
+    )
+
+
     command = [
-        "ffmpeg",
+
+        ffmpeg,
+
         "-y",
 
         # -----------------------------------------------------
@@ -84,7 +156,7 @@ def render() -> None:
         str(AUDIO),
 
         # -----------------------------------------------------
-        # Video filter
+        # Video
         # -----------------------------------------------------
         "-vf",
         (
@@ -97,13 +169,13 @@ def render() -> None:
         ),
 
         # -----------------------------------------------------
-        # Fixed duration
+        # Fixed maximum duration
         # -----------------------------------------------------
         "-t",
         "15",
 
         # -----------------------------------------------------
-        # Frame rate
+        # FPS
         # -----------------------------------------------------
         "-r",
         "30",
@@ -118,7 +190,7 @@ def render() -> None:
         "1:a:0",
 
         # -----------------------------------------------------
-        # Video
+        # Video encoding
         # -----------------------------------------------------
         "-c:v",
         "libx264",
@@ -130,7 +202,7 @@ def render() -> None:
         "23",
 
         # -----------------------------------------------------
-        # Audio
+        # Audio encoding
         # -----------------------------------------------------
         "-c:a",
         "aac",
@@ -148,37 +220,47 @@ def render() -> None:
         "+faststart",
 
         # -----------------------------------------------------
-        # Do not extend beyond 15 seconds
+        # Do not exceed shortest input
         # -----------------------------------------------------
         "-shortest",
 
         str(OUTPUT),
     ]
 
-    run_ffmpeg(command)
+
+    run_ffmpeg(
+        command
+    )
 
 
-def main() -> None:
-
-    validate_inputs()
-
-    render()
+def inspect_output() -> None:
 
     if not OUTPUT.exists():
+
         raise RuntimeError(
-            "FFmpeg finished but output.mp4 "
-            "was not created."
+            "FFmpeg finished, "
+            "but output.mp4 was not created."
         )
 
-    size = OUTPUT.stat().st_size
+
+    size =
+        OUTPUT.stat().st_size
+
 
     if size <= 0:
+
         raise RuntimeError(
-            "output.mp4 was created but is empty."
+            "output.mp4 was created "
+            "but is empty."
         )
 
+
     print(
-        f"SUCCESS: {OUTPUT}"
+        "SUCCESS:"
+    )
+
+    print(
+        OUTPUT
     )
 
     print(
@@ -186,5 +268,29 @@ def main() -> None:
     )
 
 
+def main() -> None:
+
+    print(
+        "=== Validate input ==="
+    )
+
+    validate_inputs()
+
+
+    print(
+        "=== Render ==="
+    )
+
+    render()
+
+
+    print(
+        "=== Inspect output ==="
+    )
+
+    inspect_output()
+
+
 if __name__ == "__main__":
+
     main()
