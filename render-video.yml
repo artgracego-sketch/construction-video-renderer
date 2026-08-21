@@ -9,32 +9,94 @@ permissions:
 jobs:
   render:
     name: FFmpeg Render
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Show environment
         run: |
+          echo "=== OS ==="
           uname -a
+
+          echo
+          echo "=== Python ==="
+          python3 --version
+
+          echo
+          echo "=== FFmpeg ==="
           ffmpeg -version | head -n 5
+
+          echo
+          echo "=== FFprobe ==="
+          ffprobe -version | head -n 5
+
+      - name: Show repository files
+        run: |
+          echo "=== Repository ==="
+          find . -maxdepth 3 -type f | sort
+
+          echo
+          echo "=== Input ==="
+          ls -lah input || true
+
+          echo
+          echo "=== Renderer ==="
+          ls -lah renderer || true
 
       - name: Verify input files
         run: |
+          set -eux
+
           test -f input/photo.png
           test -f input/narration.wav
           test -f input/subtitle.srt
 
-      - name: Render MP4
+          echo "All input files exist."
+
+      - name: Inspect input files
         run: |
+          set -eux
+
+          echo "=== Image ==="
+          file input/photo.png
+
+          echo
+          echo "=== Audio ==="
+          file input/narration.wav
+
+          echo
+          echo "=== Subtitle ==="
+          file input/subtitle.srt
+
+          echo
+          echo "=== Audio probe ==="
+          ffprobe \
+            -v error \
+            -show_entries \
+            stream=codec_name,sample_rate,channels,duration \
+            -of default=noprint_wrappers=1 \
+            input/narration.wav
+
+      - name: FFmpeg Render
+        run: |
+          set -eux
           python3 renderer/render_video.py
 
       - name: Inspect output
         run: |
+          set -eux
+
           test -f output/output.mp4
+
+          ls -lh output/output.mp4
 
           ffprobe \
             -v error \
