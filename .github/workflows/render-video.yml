@@ -2,6 +2,11 @@ name: Render 9:16 Video
 
 on:
   workflow_dispatch:
+    inputs:
+      drive_file_id:
+        description: "Google Drive test file ID"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -9,163 +14,55 @@ permissions:
 jobs:
   render:
     name: FFmpeg Render
-
     runs-on: ubuntu-24.04
-
     timeout-minutes: 10
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v6
 
-
       - name: Setup Python
         uses: actions/setup-python@v6
-
         with:
           python-version: "3.12"
 
-
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
-
           python -m pip install --upgrade pip
+          python -m pip install imageio-ffmpeg requests
 
-          python -m pip install imageio-ffmpeg
-
-
-      - name: Verify FFmpeg binary
+      - name: Prepare Google credentials
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
         run: |
+          test -n "$GOOGLE_CLIENT_ID"
+          test -n "$GOOGLE_CLIENT_SECRET"
+          test -n "$GOOGLE_REFRESH_TOKEN"
 
-          python - <<'PY'
+          echo "Google OAuth secrets are available."
 
-          import imageio_ffmpeg
-          import subprocess
-
-          path = (
-              imageio_ffmpeg
-              .get_ffmpeg_exe()
-          )
-
-          print(
-              "FFmpeg executable:"
-          )
-
-          print(path)
-
-          print()
-
-          result = subprocess.run(
-
-              [
-                  path,
-                  "-version"
-              ],
-
-              stdout=subprocess.PIPE,
-
-              stderr=subprocess.STDOUT,
-
-              text=True,
-
-              check=True
-
-          )
-
-          print(
-              result.stdout.splitlines()[0]
-          )
-
-          PY
-
-
-      - name: Show repository files
+      - name: Download Drive test file
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
         run: |
+          python3 scripts/download_drive_file.py
 
+      - name: Check downloaded file
+        run: |
           set -euxo pipefail
 
-          echo "=== Repository ==="
+          test -f work/drive_input
 
-          find . \
-            -maxdepth 3 \
-            -type f \
-            | sort
+          ls -lh work/drive_input
 
-          echo
-
-          echo "=== Input ==="
-
-          ls -lah input
-
-          echo
-
-          echo "=== Renderer ==="
-
-          ls -lah renderer
-
-
-      - name: Verify input files
-        run: |
-
-          set -euxo pipefail
-
-          test -f input/photo.png
-
-          test -f input/narration.wav
-
-          test -f input/subtitle.srt
-
-          echo "All input files exist."
-
-
-      - name: Inspect input files
-        run: |
-
-          set -euxo pipefail
-
-          echo "=== Image ==="
-
-          file input/photo.png
-
-          echo
-
-          echo "=== Audio ==="
-
-          file input/narration.wav
-
-          echo
-
-          echo "=== Subtitle ==="
-
-          file input/subtitle.srt
-
-
-      - name: FFmpeg Render
-        run: |
-
-          set -euxo pipefail
-
-          python3 renderer/render_video.py
-
-
-      - name: Inspect output
-        run: |
-
-          set -euxo pipefail
-
-          test -f output/output.mp4
-
-          ls -lh output/output.mp4
-
-
-      - name: Upload test video artifact
+      - name: Upload test artifact
         uses: actions/upload-artifact@v4
-
         with:
-
-          name: rendered-video
-
-          path: output/output.mp4
-
+          name: drive-test-file
+          path: work/drive_input
           retention-days: 1
