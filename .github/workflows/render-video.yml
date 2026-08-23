@@ -111,6 +111,9 @@ jobs:
           python3 -m py_compile \
             scripts/create_srt.py
 
+          python3 -m py_compile \
+            scripts/upload_drive_file.py
+
           echo
           echo "Python syntax check passed."
 
@@ -167,14 +170,17 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_DRIVE_OUTPUT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_OUTPUT_FOLDER_ID }}
         run: |
           set -euxo pipefail
 
           test -n "$GOOGLE_CLIENT_ID"
           test -n "$GOOGLE_CLIENT_SECRET"
           test -n "$GOOGLE_REFRESH_TOKEN"
+          test -n "$GOOGLE_DRIVE_OUTPUT_FOLDER_ID"
 
           echo "Google OAuth secrets are available."
+          echo "Google Drive output folder ID is available."
 
 
       # ======================================================
@@ -418,7 +424,65 @@ jobs:
 
 
       # ======================================================
-      # 19. Upload MP4
+      # 19. Upload MP4 to Google Drive
+      # ======================================================
+      - name: Upload MP4 to Google Drive
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
+          GOOGLE_DRIVE_OUTPUT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_OUTPUT_FOLDER_ID }}
+
+          DRIVE_UPLOAD_INPUT_PATH: ${{ github.workspace }}/output/output.mp4
+
+          DRIVE_UPLOAD_FILE_NAME: ${{ inputs.drive_audio_file_name }}
+
+        run: |
+          set -euxo pipefail
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          input_name = os.environ["DRIVE_UPLOAD_FILE_NAME"]
+
+          if input_name.lower().endswith(".wav"):
+              output_name = (
+                  input_name[:-4]
+                  + ".mp4"
+              )
+          else:
+              output_name = (
+                  Path(input_name).stem
+                  + ".mp4"
+              )
+
+          os.environ["DRIVE_UPLOAD_FILE_NAME"] = output_name
+
+          # Export for the shell environment.
+          with open(
+              os.environ["GITHUB_ENV"],
+              "a",
+              encoding="utf-8",
+          ) as f:
+              f.write(
+                  "DRIVE_UPLOAD_FILE_NAME="
+                  + output_name
+                  + "\n"
+              )
+
+          print(
+              "Google Drive output filename:"
+          )
+          print(output_name)
+          PY
+
+          python3 scripts/upload_drive_file.py
+
+
+      # ======================================================
+      # 20. Upload MP4 artifact
       # ======================================================
       - name: Upload rendered video artifact
         uses: actions/upload-artifact@v7
