@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from typing import Any
 
 import requests
 
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+DRIVE_FILES_URL = (
+    "https://www.googleapis.com/drive/v3/files"
+)
 
 
 def require_env(name: str) -> str:
@@ -23,11 +25,17 @@ def require_env(name: str) -> str:
 
 
 def get_access_token() -> str:
-    """Refresh TokenからGoogle Access Tokenを取得する。"""
+    client_id = require_env(
+        "GOOGLE_CLIENT_ID"
+    )
 
-    client_id = require_env("GOOGLE_CLIENT_ID")
-    client_secret = require_env("GOOGLE_CLIENT_SECRET")
-    refresh_token = require_env("GOOGLE_REFRESH_TOKEN")
+    client_secret = require_env(
+        "GOOGLE_CLIENT_SECRET"
+    )
+
+    refresh_token = require_env(
+        "GOOGLE_REFRESH_TOKEN"
+    )
 
     response = requests.post(
         TOKEN_URL,
@@ -42,9 +50,9 @@ def get_access_token() -> str:
 
     if response.status_code != 200:
         try:
-            error_data = response.json()
+            data = response.json()
         except ValueError:
-            error_data = {
+            data = {
                 "raw": response.text[:500]
             }
 
@@ -53,8 +61,8 @@ def get_access_token() -> str:
             + str(
                 {
                     "http_status": response.status_code,
-                    "error": error_data.get("error"),
-                    "error_description": error_data.get(
+                    "error": data.get("error"),
+                    "error_description": data.get(
                         "error_description"
                     ),
                 }
@@ -63,7 +71,9 @@ def get_access_token() -> str:
 
     data = response.json()
 
-    access_token = data.get("access_token")
+    access_token = data.get(
+        "access_token"
+    )
 
     if not access_token:
         raise RuntimeError(
@@ -74,51 +84,60 @@ def get_access_token() -> str:
     return access_token
 
 
-def get_file_metadata(
+def list_drive_files(
     access_token: str,
-    file_id: str,
-) -> dict:
-    """Google Driveファイルのメタデータを取得する。"""
-
-    url = f"{DRIVE_FILES_URL}/{file_id}"
+) -> list[dict[str, Any]]:
+    params = {
+        "pageSize": 100,
+        "orderBy": "modifiedTime desc",
+        "q": "trashed = false",
+        "fields": (
+            "nextPageToken,"
+            "files("
+            "id,"
+            "name,"
+            "mimeType,"
+            "size,"
+            "modifiedTime,"
+            "parents,"
+            "trashed,"
+            "capabilities/canDownload"
+            ")"
+        ),
+        "spaces": "drive",
+        "corpora": "user",
+        "includeItemsFromAllDrives": "true",
+        "supportsAllDrives": "true",
+    }
 
     response = requests.get(
-        url,
-        params={
-            "fields": (
-                "id,"
-                "name,"
-                "mimeType,"
-                "size,"
-                "trashed,"
-                "parents,"
-                "capabilities/canDownload,"
-                "driveId"
-            ),
-            "supportsAllDrives": "true",
-        },
+        DRIVE_FILES_URL,
+        params=params,
         headers={
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": (
+                "Bearer "
+                + access_token
+            )
         },
-        timeout=30,
+        timeout=60,
     )
 
     if response.status_code != 200:
         try:
-            error_data = response.json()
+            data = response.json()
         except ValueError:
-            error_data = {
+            data = {
                 "raw": response.text[:500]
             }
 
         raise RuntimeError(
-            "Google Drive metadata lookup failed: "
+            "Google Drive files.list failed: "
             + str(
                 {
                     "http_status": response.status_code,
-                    "error": error_data.get("error"),
+                    "error": data.get("error"),
                     "error_description": (
-                        error_data.get("error", {})
+                        data.get("error", {})
                         .get("errors", [{}])[0]
                         .get("message")
                     ),
@@ -126,121 +145,15 @@ def get_file_metadata(
             )
         )
 
-    return response.json()
+    data = response.json()
 
-
-def download_file(
-    access_token: str,
-    file_id: str,
-    output_path: Path,
-) -> None:
-    """Google Driveからファイル本体をダウンロードする。"""
-
-    if not file_id:
-        raise ValueError(
-            "Google Drive file ID is empty."
-        )
-
-    metadata = get_file_metadata(
-        access_token,
-        file_id,
-    )
-
-    print("Drive file metadata:")
-    print(
-        {
-            "id": metadata.get("id"),
-            "name": metadata.get("name"),
-            "mimeType": metadata.get("mimeType"),
-            "size": metadata.get("size"),
-            "trashed": metadata.get("trashed"),
-            "driveId": metadata.get("driveId"),
-            "canDownload": (
-                metadata.get("capabilities", {})
-                .get("canDownload")
-            ),
-        }
-    )
-
-    if metadata.get("trashed"):
-        raise RuntimeError(
-            "指定ファイルはゴミ箱にあります。"
-        )
-
-    can_download = (
-        metadata.get("capabilities", {})
-        .get("canDownload")
-    )
-
-    if can_download is False:
-        raise RuntimeError(
-            "指定ファイルはダウンロードできません。"
-        )
-
-    url = f"{DRIVE_FILES_URL}/{file_id}"
-
-    response = requests.get(
-        url,
-        params={
-            "alt": "media",
-            "supportsAllDrives": "true",
-        },
-        headers={
-            "Authorization": f"Bearer {access_token}",
-        },
-        timeout=120,
-    )
-
-    if response.status_code != 200:
-        try:
-            error_data = response.json()
-        except ValueError:
-            error_data = {
-                "raw": response.text[:500]
-            }
-
-        raise RuntimeError(
-            "Google Drive download failed: "
-            + str(
-                {
-                    "http_status": response.status_code,
-                    "error": error_data.get("error"),
-                }
-            )
-        )
-
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    output_path.write_bytes(
-        response.content
-    )
-
-    size = output_path.stat().st_size
-
-    if size <= 0:
-        raise RuntimeError(
-            "Downloaded file is empty."
-        )
-
-    print(
-        f"Downloaded file: {output_path}"
-    )
-
-    print(
-        f"Downloaded size: {size} bytes"
+    return data.get(
+        "files",
+        []
     )
 
 
 def main() -> None:
-    """メイン処理。"""
-
-    file_id = require_env(
-        "DRIVE_FILE_ID"
-    )
-
     print(
         "Getting Google OAuth access token..."
     )
@@ -251,23 +164,68 @@ def main() -> None:
         "Google OAuth access token acquired."
     )
 
-    output_path = Path(
-        "work/drive_input"
+    print(
+        "Listing Google Drive files..."
+    )
+
+    files = list_drive_files(
+        access_token
     )
 
     print(
-        "Downloading Google Drive file..."
+        f"Visible file count returned: {len(files)}"
     )
 
-    download_file(
-        access_token,
-        file_id,
-        output_path,
-    )
-
+    print()
     print(
-        "Drive download test succeeded."
+        "=== Google Drive files ==="
     )
+
+    if not files:
+        print(
+            "No visible files were returned."
+        )
+        return
+
+    for index, file in enumerate(
+        files,
+        start=1
+    ):
+        print(
+            f"[{index}]"
+        )
+
+        print(
+            f"  name: {file.get('name')}"
+        )
+
+        print(
+            f"  id: {file.get('id')}"
+        )
+
+        print(
+            f"  mimeType: {file.get('mimeType')}"
+        )
+
+        print(
+            f"  size: {file.get('size')}"
+        )
+
+        print(
+            f"  modifiedTime: "
+            f"{file.get('modifiedTime')}"
+        )
+
+        print(
+            f"  parents: {file.get('parents')}"
+        )
+
+        print(
+            f"  canDownload: "
+            f"{file.get('capabilities', {}).get('canDownload')}"
+        )
+
+        print()
 
 
 if __name__ == "__main__":
