@@ -20,6 +20,15 @@ DEFAULT_SUBTITLE = INPUT_DIR / "subtitle.srt"
 OUTPUT = OUTPUT_DIR / "output.mp4"
 
 
+DEFAULT_FONT_DIR = Path(
+    "/usr/share/fonts/opentype/noto"
+)
+
+DEFAULT_FONT_NAME = (
+    "Noto Sans CJK JP"
+)
+
+
 def get_input_path(
     environment_name: str,
     fallback_path: Path,
@@ -103,16 +112,81 @@ def get_ffmpeg_path() -> str:
     )
 
 
+def get_font_dir() -> Path:
+
+    value = os.environ.get(
+        "FONT_DIR"
+    )
+
+    if value:
+
+        path = Path(
+            value
+        ).resolve()
+
+    else:
+
+        path = DEFAULT_FONT_DIR
+
+    if not path.exists():
+
+        raise FileNotFoundError(
+            "Japanese font directory does not exist: "
+            + str(path)
+        )
+
+    if not path.is_dir():
+
+        raise RuntimeError(
+            "FONT_DIR is not a directory: "
+            + str(path)
+        )
+
+    return path
+
+
+def verify_japanese_font() -> None:
+
+    font_dir = get_font_dir()
+
+    expected_files = [
+
+        font_dir /
+        "NotoSansCJK-Regular.ttc",
+
+        font_dir /
+        "NotoSansCJK-Bold.ttc",
+
+    ]
+
+    existing = [
+
+        path
+        for path in expected_files
+        if path.exists()
+    ]
+
+    if not existing:
+
+        raise RuntimeError(
+            "Noto Sans CJK font files were not found in: "
+            + str(font_dir)
+        )
+
+    print(
+        "Japanese font files:"
+    )
+
+    for path in existing:
+
+        print(
+            path
+        )
+
+
 def escape_filter_path(
     path: Path,
 ) -> str:
-    """
-    FFmpeg subtitles filter用のパスを
-    安全な文字列へ変換する。
-
-    Linux runnerでは通常 ':' は存在しないが、
-    バックスラッシュ等も考慮する。
-    """
 
     value = str(
         path.resolve()
@@ -133,22 +207,27 @@ def escape_filter_path(
         "\\'"
     )
 
+    value = value.replace(
+        ",",
+        "\\,"
+    )
+
     return value
 
 
 def build_subtitle_filter(
     subtitle: Path,
 ) -> str:
-    """
-    libassを使用した日本語字幕フィルタ。
-
-    日本語フォント:
-      Noto Sans CJK JP
-    """
 
     subtitle_path = (
         escape_filter_path(
             subtitle
+        )
+    )
+
+    font_dir = (
+        escape_filter_path(
+            get_font_dir()
         )
     )
 
@@ -161,12 +240,16 @@ def build_subtitle_filter(
         "Outline=3,"
         "Shadow=0,"
         "Alignment=2,"
+        "MarginL=60,"
+        "MarginR=60,"
         "MarginV=90"
     )
 
     return (
         "subtitles="
         + subtitle_path
+        + ":fontsdir="
+        + font_dir
         + ":charenc=UTF-8"
         + ":force_style='"
         + force_style
@@ -286,6 +369,8 @@ def render(
 
     ffmpeg = get_ffmpeg_path()
 
+    font_dir = get_font_dir()
+
     print(
         "FFmpeg executable:"
     )
@@ -316,6 +401,14 @@ def render(
 
     print(
         subtitle
+    )
+
+    print(
+        "Selected font directory:"
+    )
+
+    print(
+        font_dir
     )
 
     subtitle_filter = (
@@ -483,6 +576,16 @@ def main() -> None:
         photo,
         audio,
         subtitle,
+    )
+
+    print(
+        "=== Verify Japanese font ==="
+    )
+
+    verify_japanese_font()
+
+    print(
+        "=== Subtitle content ==="
     )
 
     print_subtitle_content(
