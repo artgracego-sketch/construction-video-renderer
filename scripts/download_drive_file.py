@@ -37,7 +37,26 @@ def get_access_token() -> str:
         timeout=30,
     )
 
-    response.raise_for_status()
+    if response.status_code != 200:
+        try:
+            error_data = response.json()
+        except ValueError:
+            error_data = {
+                "raw": response.text[:500]
+            }
+
+        safe_error = {
+            "http_status": response.status_code,
+            "error": error_data.get("error"),
+            "error_description": error_data.get(
+                "error_description"
+            ),
+        }
+
+        raise RuntimeError(
+            "Google OAuth token refresh failed: "
+            + str(safe_error)
+        )
 
     data = response.json()
 
@@ -45,17 +64,11 @@ def get_access_token() -> str:
 
     if not access_token:
         raise RuntimeError(
-            "Google OAuth response did not contain access_token."
+            "Google OAuth response did not contain "
+            "access_token."
         )
 
     return access_token
-
-
-def download_file(
-    access_token: str,
-    file_id: str,
-    output_path: Path,
-) -> None:
 
     response = requests.get(
         DRIVE_URL,
