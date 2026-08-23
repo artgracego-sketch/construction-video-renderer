@@ -37,7 +37,7 @@ jobs:
 
 
       # ======================================================
-      # 2. Python
+      # 2. Setup Python
       # ======================================================
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -46,7 +46,40 @@ jobs:
 
 
       # ======================================================
-      # 3. Install dependencies
+      # 3. Install Japanese fonts
+      # ======================================================
+      - name: Install Japanese fonts
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            fonts-noto-cjk \
+            fonts-noto-cjk-extra \
+            fontconfig
+
+          fc-cache -f -v
+
+          echo
+          echo "=== Font directory ==="
+
+          ls -lah \
+            /usr/share/fonts/opentype/noto/
+
+          echo
+          echo "=== Japanese font resolution ==="
+
+          fc-match "Noto Sans CJK JP"
+
+          echo
+          echo "=== Japanese fonts ==="
+
+          fc-list :lang=ja | head -30
+
+
+      # ======================================================
+      # 4. Install Python dependencies
       # ======================================================
       - name: Install Python dependencies
         run: |
@@ -60,7 +93,7 @@ jobs:
 
 
       # ======================================================
-      # 4. Python syntax check
+      # 5. Python syntax check
       # ======================================================
       - name: Check Python syntax
         run: |
@@ -78,11 +111,56 @@ jobs:
           python3 -m py_compile \
             scripts/create_srt.py
 
+          echo
           echo "Python syntax check passed."
 
 
       # ======================================================
-      # 5. Google OAuth Secrets
+      # 6. Verify FFmpeg subtitle support
+      # ======================================================
+      - name: Verify FFmpeg subtitle support
+        run: |
+          set -euxo pipefail
+
+          python3 - <<'PY'
+          import subprocess
+          import imageio_ffmpeg
+
+          ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+          print("FFmpeg:")
+          print(ffmpeg)
+
+          result = subprocess.run(
+              [
+                  ffmpeg,
+                  "-filters",
+              ],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+              check=True,
+          )
+
+          lines = result.stdout.splitlines()
+
+          matches = [
+              line
+              for line in lines
+              if "subtitles" in line
+              or "ass" in line
+          ]
+
+          print()
+          print("=== Subtitle filters ===")
+
+          for line in matches:
+              print(line)
+          PY
+
+
+      # ======================================================
+      # 7. Google OAuth Secrets
       # ======================================================
       - name: Verify Google OAuth secrets
         env:
@@ -100,13 +178,14 @@ jobs:
 
 
       # ======================================================
-      # 6. Repository information
+      # 8. Repository information
       # ======================================================
       - name: Show repository structure
         run: |
           set -euxo pipefail
 
           echo "=== Repository ==="
+
           find . \
             -maxdepth 3 \
             -type f \
@@ -114,15 +193,17 @@ jobs:
 
           echo
           echo "=== Scripts ==="
+
           ls -lah scripts || true
 
           echo
           echo "=== Renderer ==="
+
           ls -lah renderer || true
 
 
       # ======================================================
-      # 7. List Google Drive files
+      # 9. List Google Drive files
       # ======================================================
       - name: List Google Drive files
         env:
@@ -136,7 +217,7 @@ jobs:
 
 
       # ======================================================
-      # 8. Download Google Drive photo
+      # 10. Download Google Drive photo
       # ======================================================
       - name: Download Google Drive photo
         env:
@@ -155,7 +236,7 @@ jobs:
 
 
       # ======================================================
-      # 9. Verify photo
+      # 11. Verify photo
       # ======================================================
       - name: Verify Drive photo
         run: |
@@ -164,15 +245,17 @@ jobs:
           test -f work/drive_input_photo
 
           echo "=== Drive photo ==="
+
           ls -lh work/drive_input_photo
 
           echo
           echo "=== File type ==="
+
           file work/drive_input_photo
 
 
       # ======================================================
-      # 10. Download Google Drive narration
+      # 12. Download Google Drive narration
       # ======================================================
       - name: Download Google Drive narration
         env:
@@ -191,7 +274,7 @@ jobs:
 
 
       # ======================================================
-      # 11. Verify narration
+      # 13. Verify narration
       # ======================================================
       - name: Verify Drive narration
         run: |
@@ -200,15 +283,17 @@ jobs:
           test -f work/drive_input_audio.wav
 
           echo "=== Drive narration ==="
+
           ls -lh work/drive_input_audio.wav
 
           echo
           echo "=== File type ==="
+
           file work/drive_input_audio.wav
 
 
       # ======================================================
-      # 12. Create SRT from GAS subtitle JSON
+      # 14. Create SRT
       # ======================================================
       - name: Create subtitle SRT
         env:
@@ -223,7 +308,7 @@ jobs:
 
 
       # ======================================================
-      # 13. Verify SRT
+      # 15. Verify SRT
       # ======================================================
       - name: Verify generated subtitle
         run: |
@@ -235,9 +320,14 @@ jobs:
 
           cat work/subtitle.srt
 
+          echo
+          echo "=== SRT file ==="
+
+          ls -lh work/subtitle.srt
+
 
       # ======================================================
-      # 14. Verify FFmpeg
+      # 16. Verify FFmpeg binary
       # ======================================================
       - name: Verify FFmpeg binary
         run: |
@@ -263,12 +353,15 @@ jobs:
               check=True,
           )
 
-          print(result.stdout.splitlines()[0])
+          print()
+          print(
+              result.stdout.splitlines()[0]
+          )
           PY
 
 
       # ======================================================
-      # 15. Render
+      # 17. Render
       # ======================================================
       - name: FFmpeg Render
         env:
@@ -277,6 +370,8 @@ jobs:
           DRIVE_AUDIO_PATH: ${{ github.workspace }}/work/drive_input_audio.wav
 
           DRIVE_SUBTITLE_PATH: ${{ github.workspace }}/work/subtitle.srt
+
+          FONT_DIR: /usr/share/fonts/opentype/noto
 
         run: |
           set -euxo pipefail
@@ -295,12 +390,16 @@ jobs:
           ls -lh "$DRIVE_SUBTITLE_PATH"
 
           echo
+          echo "Font directory:"
+          ls -lah "$FONT_DIR"
+
+          echo
 
           python3 renderer/render_video.py
 
 
       # ======================================================
-      # 16. Inspect MP4
+      # 18. Inspect output
       # ======================================================
       - name: Inspect output
         run: |
@@ -309,15 +408,17 @@ jobs:
           test -f output/output.mp4
 
           echo "=== Output ==="
+
           ls -lh output/output.mp4
 
           echo
           echo "=== File type ==="
+
           file output/output.mp4
 
 
       # ======================================================
-      # 17. Upload MP4
+      # 19. Upload MP4
       # ======================================================
       - name: Upload rendered video artifact
         uses: actions/upload-artifact@v7
