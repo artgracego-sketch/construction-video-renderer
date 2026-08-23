@@ -13,48 +13,55 @@ on:
         required: true
         type: string
 
+      subtitle_json:
+        description: "Subtitle JSON array from GAS"
+        required: true
+        type: string
+
 permissions:
   contents: read
 
 jobs:
   render:
     name: FFmpeg Render
-
     runs-on: ubuntu-24.04
-
     timeout-minutes: 15
 
     steps:
 
-      # ------------------------------------------------------
+      # ======================================================
       # 1. Checkout
-      # ------------------------------------------------------
+      # ======================================================
       - name: Checkout repository
         uses: actions/checkout@v7
 
 
-      # ------------------------------------------------------
+      # ======================================================
       # 2. Python
-      # ------------------------------------------------------
+      # ======================================================
       - name: Setup Python
         uses: actions/setup-python@v7
-
         with:
           python-version: "3.12"
 
 
-      # ------------------------------------------------------
-      # 3. Dependencies
-      # ------------------------------------------------------
+      # ======================================================
+      # 3. Install dependencies
+      # ======================================================
       - name: Install Python dependencies
         run: |
+          set -euxo pipefail
+
           python -m pip install --upgrade pip
-          python -m pip install imageio-ffmpeg requests
+
+          python -m pip install \
+            imageio-ffmpeg \
+            requests
 
 
-      # ------------------------------------------------------
-      # 4. Syntax check
-      # ------------------------------------------------------
+      # ======================================================
+      # 4. Python syntax check
+      # ======================================================
       - name: Check Python syntax
         run: |
           set -euxo pipefail
@@ -68,18 +75,20 @@ jobs:
           python3 -m py_compile \
             scripts/list_drive_files.py
 
+          python3 -m py_compile \
+            scripts/create_srt.py
+
           echo "Python syntax check passed."
 
 
-      # ------------------------------------------------------
-      # 5. OAuth secrets
-      # ------------------------------------------------------
+      # ======================================================
+      # 5. Google OAuth Secrets
+      # ======================================================
       - name: Verify Google OAuth secrets
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-
         run: |
           set -euxo pipefail
 
@@ -90,62 +99,54 @@ jobs:
           echo "Google OAuth secrets are available."
 
 
-      # ------------------------------------------------------
+      # ======================================================
       # 6. Repository information
-      # ------------------------------------------------------
-      - name: Show repository files
+      # ======================================================
+      - name: Show repository structure
         run: |
           set -euxo pipefail
 
           echo "=== Repository ==="
-
           find . \
             -maxdepth 3 \
             -type f \
             | sort
 
           echo
-
           echo "=== Scripts ==="
-
           ls -lah scripts || true
 
           echo
-
           echo "=== Renderer ==="
-
           ls -lah renderer || true
 
 
-      # ------------------------------------------------------
-      # 7. List Drive files
-      # ------------------------------------------------------
+      # ======================================================
+      # 7. List Google Drive files
+      # ======================================================
       - name: List Google Drive files
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-
         run: |
           set -euxo pipefail
 
           python3 scripts/list_drive_files.py
 
 
-      # ------------------------------------------------------
-      # 8. Download photo from Drive
-      # ------------------------------------------------------
+      # ======================================================
+      # 8. Download Google Drive photo
+      # ======================================================
       - name: Download Google Drive photo
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
 
-          DRIVE_FILE_NAME:
-            ${{ inputs.drive_photo_file_name }}
+          DRIVE_FILE_NAME: ${{ inputs.drive_photo_file_name }}
 
-          DRIVE_OUTPUT_PATH:
-            ${{ github.workspace }}/work/drive_input_photo
+          DRIVE_OUTPUT_PATH: ${{ github.workspace }}/work/drive_input_photo
 
         run: |
           set -euxo pipefail
@@ -153,9 +154,9 @@ jobs:
           python3 scripts/download_drive_file.py
 
 
-      # ------------------------------------------------------
+      # ======================================================
       # 9. Verify photo
-      # ------------------------------------------------------
+      # ======================================================
       - name: Verify Drive photo
         run: |
           set -euxo pipefail
@@ -163,30 +164,25 @@ jobs:
           test -f work/drive_input_photo
 
           echo "=== Drive photo ==="
-
-          ls -lh \
-            work/drive_input_photo
+          ls -lh work/drive_input_photo
 
           echo
+          echo "=== File type ==="
+          file work/drive_input_photo
 
-          file \
-            work/drive_input_photo
 
-
-      # ------------------------------------------------------
-      # 10. Download narration WAV from Drive
-      # ------------------------------------------------------
+      # ======================================================
+      # 10. Download Google Drive narration
+      # ======================================================
       - name: Download Google Drive narration
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
 
-          DRIVE_FILE_NAME:
-            ${{ inputs.drive_audio_file_name }}
+          DRIVE_FILE_NAME: ${{ inputs.drive_audio_file_name }}
 
-          DRIVE_OUTPUT_PATH:
-            ${{ github.workspace }}/work/drive_input_audio.wav
+          DRIVE_OUTPUT_PATH: ${{ github.workspace }}/work/drive_input_audio.wav
 
         run: |
           set -euxo pipefail
@@ -194,9 +190,9 @@ jobs:
           python3 scripts/download_drive_file.py
 
 
-      # ------------------------------------------------------
+      # ======================================================
       # 11. Verify narration
-      # ------------------------------------------------------
+      # ======================================================
       - name: Verify Drive narration
         run: |
           set -euxo pipefail
@@ -204,35 +200,45 @@ jobs:
           test -f work/drive_input_audio.wav
 
           echo "=== Drive narration ==="
-
-          ls -lh \
-            work/drive_input_audio.wav
+          ls -lh work/drive_input_audio.wav
 
           echo
+          echo "=== File type ==="
+          file work/drive_input_audio.wav
 
-          file \
-            work/drive_input_audio.wav
 
+      # ======================================================
+      # 12. Create SRT from GAS subtitle JSON
+      # ======================================================
+      - name: Create subtitle SRT
+        env:
+          SUBTITLE_JSON: ${{ inputs.subtitle_json }}
 
-      # ------------------------------------------------------
-      # 12. Current subtitle
-      #
-      # No.15-B-3では既存のテスト字幕を使用。
-      # 次工程でDrive/GAS生成字幕へ変更する。
-      # ------------------------------------------------------
-      - name: Verify subtitle
+          SUBTITLE_OUTPUT_PATH: ${{ github.workspace }}/work/subtitle.srt
+
         run: |
           set -euxo pipefail
 
-          test -f input/subtitle.srt
-
-          echo "Subtitle:"
-          ls -lh input/subtitle.srt
+          python3 scripts/create_srt.py
 
 
-      # ------------------------------------------------------
-      # 13. Verify FFmpeg
-      # ------------------------------------------------------
+      # ======================================================
+      # 13. Verify SRT
+      # ======================================================
+      - name: Verify generated subtitle
+        run: |
+          set -euxo pipefail
+
+          test -f work/subtitle.srt
+
+          echo "=== Generated SRT ==="
+
+          cat work/subtitle.srt
+
+
+      # ======================================================
+      # 14. Verify FFmpeg
+      # ======================================================
       - name: Verify FFmpeg binary
         run: |
           set -euxo pipefail
@@ -257,26 +263,20 @@ jobs:
               check=True,
           )
 
-          print()
-          print(
-              result.stdout.splitlines()[0]
-          )
+          print(result.stdout.splitlines()[0])
           PY
 
 
-      # ------------------------------------------------------
-      # 14. Render using Drive photo + Drive narration
-      # ------------------------------------------------------
+      # ======================================================
+      # 15. Render
+      # ======================================================
       - name: FFmpeg Render
         env:
-          DRIVE_INPUT_PATH:
-            ${{ github.workspace }}/work/drive_input_photo
+          DRIVE_INPUT_PATH: ${{ github.workspace }}/work/drive_input_photo
 
-          DRIVE_AUDIO_PATH:
-            ${{ github.workspace }}/work/drive_input_audio.wav
+          DRIVE_AUDIO_PATH: ${{ github.workspace }}/work/drive_input_audio.wav
 
-          DRIVE_SUBTITLE_PATH:
-            ${{ github.workspace }}/input/subtitle.srt
+          DRIVE_SUBTITLE_PATH: ${{ github.workspace }}/work/subtitle.srt
 
         run: |
           set -euxo pipefail
@@ -287,12 +287,10 @@ jobs:
           ls -lh "$DRIVE_INPUT_PATH"
 
           echo
-
           echo "Audio:"
           ls -lh "$DRIVE_AUDIO_PATH"
 
           echo
-
           echo "Subtitle:"
           ls -lh "$DRIVE_SUBTITLE_PATH"
 
@@ -301,9 +299,9 @@ jobs:
           python3 renderer/render_video.py
 
 
-      # ------------------------------------------------------
-      # 15. Inspect output
-      # ------------------------------------------------------
+      # ======================================================
+      # 16. Inspect MP4
+      # ======================================================
       - name: Inspect output
         run: |
           set -euxo pipefail
@@ -311,23 +309,19 @@ jobs:
           test -f output/output.mp4
 
           echo "=== Output ==="
-
           ls -lh output/output.mp4
 
           echo
-
+          echo "=== File type ==="
           file output/output.mp4
 
 
-      # ------------------------------------------------------
-      # 16. Upload MP4
-      # ------------------------------------------------------
+      # ======================================================
+      # 17. Upload MP4
+      # ======================================================
       - name: Upload rendered video artifact
         uses: actions/upload-artifact@v7
-
         with:
           name: rendered-video
-
           path: output/output.mp4
-
           retention-days: 1
