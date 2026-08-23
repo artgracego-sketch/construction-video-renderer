@@ -436,47 +436,52 @@ jobs:
 
           DRIVE_UPLOAD_INPUT_PATH: ${{ github.workspace }}/output/output.mp4
 
-          DRIVE_UPLOAD_FILE_NAME: ${{ inputs.drive_audio_file_name }}
+          SOURCE_AUDIO_FILE_NAME: ${{ inputs.drive_audio_file_name }}
 
         run: |
           set -euxo pipefail
 
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
+          test -f "$DRIVE_UPLOAD_INPUT_PATH"
 
-          input_name = os.environ["DRIVE_UPLOAD_FILE_NAME"]
+          echo "=== Preparing Google Drive output filename ==="
 
-          if input_name.lower().endswith(".wav"):
-              output_name = (
-                  input_name[:-4]
-                  + ".mp4"
-              )
-          else:
-              output_name = (
-                  Path(input_name).stem
-                  + ".mp4"
-              )
+          case "$SOURCE_AUDIO_FILE_NAME" in
+            *.wav)
+              DRIVE_UPLOAD_FILE_NAME="${SOURCE_AUDIO_FILE_NAME%.wav}.mp4"
+              ;;
+            *.WAV)
+              DRIVE_UPLOAD_FILE_NAME="${SOURCE_AUDIO_FILE_NAME%.WAV}.mp4"
+              ;;
+            *)
+              DRIVE_UPLOAD_FILE_NAME="${SOURCE_AUDIO_FILE_NAME}.mp4"
+              ;;
+          esac
 
-          os.environ["DRIVE_UPLOAD_FILE_NAME"] = output_name
+          export DRIVE_UPLOAD_FILE_NAME
 
-          # Export for the shell environment.
-          with open(
-              os.environ["GITHUB_ENV"],
-              "a",
-              encoding="utf-8",
-          ) as f:
-              f.write(
-                  "DRIVE_UPLOAD_FILE_NAME="
-                  + output_name
-                  + "\n"
-              )
+          echo
+          echo "=== Google Drive upload settings ==="
 
-          print(
-              "Google Drive output filename:"
-          )
-          print(output_name)
-          PY
+          echo "Input file:"
+          echo "$DRIVE_UPLOAD_INPUT_PATH"
+
+          echo
+          echo "Output filename:"
+          echo "$DRIVE_UPLOAD_FILE_NAME"
+
+          echo
+          echo "Output folder ID:"
+          echo "$GOOGLE_DRIVE_OUTPUT_FOLDER_ID"
+
+          echo
+          echo "Output file information:"
+
+          ls -lh "$DRIVE_UPLOAD_INPUT_PATH"
+
+          file "$DRIVE_UPLOAD_INPUT_PATH"
+
+          echo
+          echo "=== Starting Google Drive upload ==="
 
           python3 scripts/upload_drive_file.py
 
