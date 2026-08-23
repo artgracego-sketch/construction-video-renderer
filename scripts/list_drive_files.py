@@ -8,7 +8,9 @@ import requests
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+DRIVE_FILES_URL = (
+    "https://www.googleapis.com/drive/v3/files"
+)
 
 
 def require_env(name: str) -> str:
@@ -85,23 +87,27 @@ def get_access_token() -> str:
 def list_drive_files(
     access_token: str,
 ) -> list[dict[str, Any]]:
-
     params = {
         "pageSize": 100,
         "orderBy": "modifiedTime desc",
         "q": "trashed = false",
         "fields": (
+            "nextPageToken,"
             "files("
             "id,"
             "name,"
             "mimeType,"
             "size,"
             "modifiedTime,"
-            "parents"
+            "parents,"
+            "trashed,"
+            "capabilities/canDownload"
             ")"
         ),
         "spaces": "drive",
         "corpora": "user",
+        "includeItemsFromAllDrives": "true",
+        "supportsAllDrives": "true",
     }
 
     response = requests.get(
@@ -130,6 +136,11 @@ def list_drive_files(
                 {
                     "http_status": response.status_code,
                     "error": data.get("error"),
+                    "error_description": (
+                        data.get("error", {})
+                        .get("errors", [{}])[0]
+                        .get("message")
+                    ),
                 }
             )
         )
@@ -143,7 +154,6 @@ def list_drive_files(
 
 
 def main() -> None:
-
     print(
         "Getting Google OAuth access token..."
     )
@@ -155,7 +165,7 @@ def main() -> None:
     )
 
     print(
-        "Listing files visible to this account..."
+        "Listing Google Drive files..."
     )
 
     files = list_drive_files(
@@ -166,45 +176,53 @@ def main() -> None:
         f"Visible file count returned: {len(files)}"
     )
 
+    print()
+    print(
+        "=== Google Drive files ==="
+    )
+
     if not files:
         print(
             "No visible files were returned."
         )
         return
 
-    print()
-    print(
-        "=== Google Drive files ==="
-    )
-
     for index, file in enumerate(
         files,
         start=1
     ):
-
         print(
-            f"[{index}] "
-            f"name={file.get('name')!r}"
+            f"[{index}]"
         )
 
         print(
-            f"     id={file.get('id')}"
+            f"  name: {file.get('name')}"
         )
 
         print(
-            f"     mimeType={file.get('mimeType')}"
+            f"  id: {file.get('id')}"
         )
 
         print(
-            f"     size={file.get('size')}"
+            f"  mimeType: {file.get('mimeType')}"
         )
 
         print(
-            f"     modifiedTime={file.get('modifiedTime')}"
+            f"  size: {file.get('size')}"
         )
 
         print(
-            f"     parents={file.get('parents')}"
+            f"  modifiedTime: "
+            f"{file.get('modifiedTime')}"
+        )
+
+        print(
+            f"  parents: {file.get('parents')}"
+        )
+
+        print(
+            f"  canDownload: "
+            f"{file.get('capabilities', {}).get('canDownload')}"
         )
 
         print()
