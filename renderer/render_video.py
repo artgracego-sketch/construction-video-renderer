@@ -103,6 +103,77 @@ def get_ffmpeg_path() -> str:
     )
 
 
+def escape_filter_path(
+    path: Path,
+) -> str:
+    """
+    FFmpeg subtitles filter用のパスを
+    安全な文字列へ変換する。
+
+    Linux runnerでは通常 ':' は存在しないが、
+    バックスラッシュ等も考慮する。
+    """
+
+    value = str(
+        path.resolve()
+    )
+
+    value = value.replace(
+        "\\",
+        "\\\\"
+    )
+
+    value = value.replace(
+        ":",
+        "\\:"
+    )
+
+    value = value.replace(
+        "'",
+        "\\'"
+    )
+
+    return value
+
+
+def build_subtitle_filter(
+    subtitle: Path,
+) -> str:
+    """
+    libassを使用した日本語字幕フィルタ。
+
+    日本語フォント:
+      Noto Sans CJK JP
+    """
+
+    subtitle_path = (
+        escape_filter_path(
+            subtitle
+        )
+    )
+
+    force_style = (
+        "FontName=Noto Sans CJK JP,"
+        "FontSize=26,"
+        "PrimaryColour=&H00FFFFFF,"
+        "OutlineColour=&H00000000,"
+        "BorderStyle=1,"
+        "Outline=3,"
+        "Shadow=0,"
+        "Alignment=2,"
+        "MarginV=90"
+    )
+
+    return (
+        "subtitles="
+        + subtitle_path
+        + ":charenc=UTF-8"
+        + ":force_style='"
+        + force_style
+        + "'"
+    )
+
+
 def run_ffmpeg(
     command: list[str],
 ) -> None:
@@ -166,6 +237,41 @@ def validate_inputs(
             )
         )
 
+    if subtitle.stat().st_size <= 0:
+
+        raise RuntimeError(
+            "Subtitle file is empty: "
+            + str(subtitle)
+        )
+
+
+def print_subtitle_content(
+    subtitle: Path,
+) -> None:
+
+    print(
+        "=== Subtitle file content ==="
+    )
+
+    try:
+
+        content = (
+            subtitle
+            .read_text(
+                encoding="utf-8"
+            )
+        )
+
+        print(
+            content
+        )
+
+    except UnicodeDecodeError as exc:
+
+        raise RuntimeError(
+            "Subtitle file is not valid UTF-8."
+        ) from exc
+
 
 def render(
     photo: Path,
@@ -212,11 +318,38 @@ def render(
         subtitle
     )
 
+    subtitle_filter = (
+        build_subtitle_filter(
+            subtitle
+        )
+    )
+
+    print(
+        "Subtitle filter:"
+    )
+
+    print(
+        subtitle_filter
+    )
+
+    video_filter = (
+        "scale=1080:1920:"
+        "force_original_aspect_ratio=decrease,"
+        "pad=1080:1920:"
+        "(ow-iw)/2:(oh-ih)/2,"
+        + subtitle_filter
+    )
+
     command = [
 
         ffmpeg,
 
         "-y",
+
+        "-hide_banner",
+
+        "-loglevel",
+        "info",
 
         "-loop",
         "1",
@@ -228,14 +361,7 @@ def render(
         str(audio),
 
         "-vf",
-        (
-            "scale=1080:1920:"
-            "force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:"
-            "(ow-iw)/2:(oh-ih)/2,"
-            "subtitles="
-            + str(subtitle)
-        ),
+        video_filter,
 
         "-t",
         "15",
@@ -357,6 +483,10 @@ def main() -> None:
         photo,
         audio,
         subtitle,
+    )
+
+    print_subtitle_content(
+        subtitle
     )
 
     print(
