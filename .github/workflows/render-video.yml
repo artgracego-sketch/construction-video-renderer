@@ -3,8 +3,13 @@ name: Render 9:16 Video
 on:
   workflow_dispatch:
     inputs:
-      drive_file_name:
-        description: "Google Drive file name to download"
+      drive_photo_file_name:
+        description: "Google Drive photo file name"
+        required: true
+        type: string
+
+      drive_audio_file_name:
+        description: "Google Drive narration WAV file name"
         required: true
         type: string
 
@@ -14,13 +19,15 @@ permissions:
 jobs:
   render:
     name: FFmpeg Render
+
     runs-on: ubuntu-24.04
+
     timeout-minutes: 15
 
     steps:
 
       # ------------------------------------------------------
-      # 1. Repository
+      # 1. Checkout
       # ------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -31,6 +38,7 @@ jobs:
       # ------------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v7
+
         with:
           python-version: "3.12"
 
@@ -71,6 +79,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
         run: |
           set -euxo pipefail
 
@@ -82,36 +91,41 @@ jobs:
 
 
       # ------------------------------------------------------
-      # 6. Repository structure
+      # 6. Repository information
       # ------------------------------------------------------
       - name: Show repository files
         run: |
           set -euxo pipefail
 
           echo "=== Repository ==="
-          find . -maxdepth 3 -type f | sort
+
+          find . \
+            -maxdepth 3 \
+            -type f \
+            | sort
 
           echo
+
           echo "=== Scripts ==="
+
           ls -lah scripts || true
 
           echo
-          echo "=== Renderer ==="
-          ls -lah renderer || true
 
-          echo
-          echo "=== Input ==="
-          ls -lah input || true
+          echo "=== Renderer ==="
+
+          ls -lah renderer || true
 
 
       # ------------------------------------------------------
-      # 7. List Google Drive files
+      # 7. List Drive files
       # ------------------------------------------------------
       - name: List Google Drive files
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
         run: |
           set -euxo pipefail
 
@@ -119,14 +133,20 @@ jobs:
 
 
       # ------------------------------------------------------
-      # 8. Download the requested Google Drive file
+      # 8. Download photo from Drive
       # ------------------------------------------------------
-      - name: Download Google Drive input
+      - name: Download Google Drive photo
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-          DRIVE_FILE_NAME: ${{ inputs.drive_file_name }}
+
+          DRIVE_FILE_NAME:
+            ${{ inputs.drive_photo_file_name }}
+
+          DRIVE_OUTPUT_PATH:
+            ${{ github.workspace }}/work/drive_input_photo
+
         run: |
           set -euxo pipefail
 
@@ -134,40 +154,84 @@ jobs:
 
 
       # ------------------------------------------------------
-      # 9. Verify downloaded file
+      # 9. Verify photo
       # ------------------------------------------------------
-      - name: Verify downloaded Drive input
+      - name: Verify Drive photo
         run: |
           set -euxo pipefail
 
-          test -f work/drive_input
+          test -f work/drive_input_photo
 
-          echo "=== Downloaded Drive input ==="
-          ls -lh work/drive_input
+          echo "=== Drive photo ==="
+
+          ls -lh \
+            work/drive_input_photo
 
           echo
-          echo "=== File type ==="
-          file work/drive_input
+
+          file \
+            work/drive_input_photo
 
 
       # ------------------------------------------------------
-      # 10. Verify required narration and subtitle
-      #
-      # 現在はNo.15-AのテストWAV/SRTを使用。
-      # 次工程でGoogle Driveから実データへ変更する。
+      # 10. Download narration WAV from Drive
       # ------------------------------------------------------
-      - name: Verify narration and subtitle
+      - name: Download Google Drive narration
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
+          DRIVE_FILE_NAME:
+            ${{ inputs.drive_audio_file_name }}
+
+          DRIVE_OUTPUT_PATH:
+            ${{ github.workspace }}/work/drive_input_audio.wav
+
         run: |
           set -euxo pipefail
 
-          test -f input/narration.wav
-          test -f input/subtitle.srt
-
-          echo "Narration and subtitle files exist."
+          python3 scripts/download_drive_file.py
 
 
       # ------------------------------------------------------
-      # 11. Verify FFmpeg
+      # 11. Verify narration
+      # ------------------------------------------------------
+      - name: Verify Drive narration
+        run: |
+          set -euxo pipefail
+
+          test -f work/drive_input_audio.wav
+
+          echo "=== Drive narration ==="
+
+          ls -lh \
+            work/drive_input_audio.wav
+
+          echo
+
+          file \
+            work/drive_input_audio.wav
+
+
+      # ------------------------------------------------------
+      # 12. Current subtitle
+      #
+      # No.15-B-3では既存のテスト字幕を使用。
+      # 次工程でDrive/GAS生成字幕へ変更する。
+      # ------------------------------------------------------
+      - name: Verify subtitle
+        run: |
+          set -euxo pipefail
+
+          test -f input/subtitle.srt
+
+          echo "Subtitle:"
+          ls -lh input/subtitle.srt
+
+
+      # ------------------------------------------------------
+      # 13. Verify FFmpeg
       # ------------------------------------------------------
       - name: Verify FFmpeg binary
         run: |
@@ -194,27 +258,51 @@ jobs:
           )
 
           print()
-          print(result.stdout.splitlines()[0])
+          print(
+              result.stdout.splitlines()[0]
+          )
           PY
 
 
       # ------------------------------------------------------
-      # 12. Render
+      # 14. Render using Drive photo + Drive narration
       # ------------------------------------------------------
       - name: FFmpeg Render
         env:
-          DRIVE_INPUT_PATH: ${{ github.workspace }}/work/drive_input
+          DRIVE_INPUT_PATH:
+            ${{ github.workspace }}/work/drive_input_photo
+
+          DRIVE_AUDIO_PATH:
+            ${{ github.workspace }}/work/drive_input_audio.wav
+
+          DRIVE_SUBTITLE_PATH:
+            ${{ github.workspace }}/input/subtitle.srt
+
         run: |
           set -euxo pipefail
 
-          echo "=== Selected Drive input ==="
+          echo "=== Rendering inputs ==="
+
+          echo "Photo:"
           ls -lh "$DRIVE_INPUT_PATH"
+
+          echo
+
+          echo "Audio:"
+          ls -lh "$DRIVE_AUDIO_PATH"
+
+          echo
+
+          echo "Subtitle:"
+          ls -lh "$DRIVE_SUBTITLE_PATH"
+
+          echo
 
           python3 renderer/render_video.py
 
 
       # ------------------------------------------------------
-      # 13. Inspect output
+      # 15. Inspect output
       # ------------------------------------------------------
       - name: Inspect output
         run: |
@@ -223,19 +311,23 @@ jobs:
           test -f output/output.mp4
 
           echo "=== Output ==="
+
           ls -lh output/output.mp4
 
           echo
-          echo "=== File type ==="
+
           file output/output.mp4
 
 
       # ------------------------------------------------------
-      # 14. Upload MP4
+      # 16. Upload MP4
       # ------------------------------------------------------
       - name: Upload rendered video artifact
         uses: actions/upload-artifact@v7
+
         with:
           name: rendered-video
+
           path: output/output.mp4
+
           retention-days: 1
