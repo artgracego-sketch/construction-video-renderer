@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -49,6 +50,7 @@ def get_access_token() -> str:
     )
 
     if response.status_code != 200:
+
         try:
             data = response.json()
         except ValueError:
@@ -76,6 +78,7 @@ def get_access_token() -> str:
     )
 
     if not access_token:
+
         raise RuntimeError(
             "Google OAuth response did not contain "
             "access_token."
@@ -87,12 +90,6 @@ def get_access_token() -> str:
 def escape_drive_query_value(
     value: str,
 ) -> str:
-    """
-    Google Drive APIのq文字列用に
-    バックスラッシュとシングルクォートを
-    エスケープする。
-    """
-
     return (
         value
         .replace("\\", "\\\\")
@@ -103,10 +100,7 @@ def escape_drive_query_value(
 def find_files_by_name(
     access_token: str,
     file_name: str,
-) -> list[dict]:
-    """
-    Google Driveから完全一致のファイル名を検索する。
-    """
+) -> list[dict[str, Any]]:
 
     escaped_name = (
         escape_drive_query_value(
@@ -154,6 +148,7 @@ def find_files_by_name(
     )
 
     if response.status_code != 200:
+
         try:
             data = response.json()
         except ValueError:
@@ -189,9 +184,6 @@ def download_file(
     file_id: str,
     output_path: Path,
 ) -> None:
-    """
-    Google Driveから実ファイルを取得する。
-    """
 
     url = (
         f"{DRIVE_FILES_URL}/{file_id}"
@@ -208,10 +200,11 @@ def download_file(
                 f"Bearer {access_token}"
             )
         },
-        timeout=120,
+        timeout=300,
     )
 
     if response.status_code != 200:
+
         try:
             data = response.json()
         except ValueError:
@@ -252,14 +245,28 @@ def download_file(
 
 
 def main() -> None:
+
     file_name = require_env(
         "DRIVE_FILE_NAME"
+    ).strip()
+
+    output_path_text = require_env(
+        "DRIVE_OUTPUT_PATH"
     ).strip()
 
     if not file_name:
         raise RuntimeError(
             "DRIVE_FILE_NAME is empty."
         )
+
+    if not output_path_text:
+        raise RuntimeError(
+            "DRIVE_OUTPUT_PATH is empty."
+        )
+
+    output_path = Path(
+        output_path_text
+    )
 
     print(
         "Getting Google OAuth access token..."
@@ -285,6 +292,7 @@ def main() -> None:
     )
 
     if not files:
+
         raise RuntimeError(
             "Google Drive file not found by name: "
             + file_name
@@ -296,8 +304,9 @@ def main() -> None:
 
     for index, file in enumerate(
         files,
-        start=1
+        start=1,
     ):
+
         print(
             f"[{index}] "
             f"name={file.get('name')!r} "
@@ -321,13 +330,19 @@ def main() -> None:
     )
 
     if not selected_id:
+
         raise RuntimeError(
             "Matched Google Drive file has no file ID."
         )
 
-    if selected_mime == "application/vnd.google-apps.folder":
+    if (
+        selected_mime
+        == "application/vnd.google-apps.folder"
+    ):
+
         raise RuntimeError(
-            "The matched item is a folder, not a file."
+            "The matched item is a folder, "
+            "not a file."
         )
 
     can_download = (
@@ -337,6 +352,7 @@ def main() -> None:
     )
 
     if can_download is False:
+
         raise RuntimeError(
             "The matched file cannot be downloaded "
             "by this OAuth user."
@@ -359,10 +375,6 @@ def main() -> None:
         f"mimeType: {selected_mime}"
     )
 
-    output_path = Path(
-        "work/drive_input"
-    )
-
     print()
     print(
         "Downloading Google Drive file..."
@@ -375,7 +387,7 @@ def main() -> None:
     )
 
     print(
-        "Drive download test succeeded."
+        "Drive download succeeded."
     )
 
     print(
