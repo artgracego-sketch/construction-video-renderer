@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,21 +13,75 @@ ROOT = Path(__file__).resolve().parents[1]
 INPUT_DIR = ROOT / "input"
 OUTPUT_DIR = ROOT / "output"
 
-PHOTO = INPUT_DIR / "photo.png"
+# ------------------------------------------------------------
+# Google Driveから取得した実画像を優先
+#
+# DRIVE_INPUT_PATH が指定されていれば、それを使用する。
+# 指定されていない場合だけ、旧テスト用 input/photo.png
+# を使用する。
+# ------------------------------------------------------------
+DEFAULT_PHOTO = INPUT_DIR / "photo.png"
+
 AUDIO = INPUT_DIR / "narration.wav"
 SUBTITLE = INPUT_DIR / "subtitle.srt"
 
 OUTPUT = OUTPUT_DIR / "output.mp4"
 
 
+def get_photo_path() -> Path:
+    """
+    動画生成に使用する画像ファイルを決定する。
+
+    優先順位:
+      1. DRIVE_INPUT_PATH
+      2. input/photo.png
+    """
+
+    drive_input = os.environ.get(
+        "DRIVE_INPUT_PATH"
+    )
+
+    if drive_input:
+        path = Path(
+            drive_input
+        ).resolve()
+
+        if not path.exists():
+            raise FileNotFoundError(
+                "DRIVE_INPUT_PATH does not exist: "
+                + str(path)
+            )
+
+        if not path.is_file():
+            raise RuntimeError(
+                "DRIVE_INPUT_PATH is not a file: "
+                + str(path)
+            )
+
+        return path
+
+    if DEFAULT_PHOTO.exists():
+        return DEFAULT_PHOTO
+
+    raise FileNotFoundError(
+        "No input photo was found.\n"
+        "Expected either:\n"
+        "- DRIVE_INPUT_PATH\n"
+        "- input/photo.png"
+    )
+
+
 def get_ffmpeg_path() -> str:
     """
-    imageio-ffmpegが管理するFFmpegを優先する。
-    見つからない場合のみOSのPATHを確認する。
+    imageio-ffmpegが提供するFFmpegを優先する。
+    見つからない場合のみPATHを確認する。
     """
 
     try:
-        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        ffmpeg_path = (
+            imageio_ffmpeg
+            .get_ffmpeg_exe()
+        )
 
         if ffmpeg_path:
 
@@ -42,19 +97,16 @@ def get_ffmpeg_path() -> str:
 
         print(
             "imageio-ffmpeg lookup failed:",
-            exc
+            exc,
         )
-
 
     system_ffmpeg = shutil.which(
         "ffmpeg"
     )
 
-
     if system_ffmpeg:
 
         return system_ffmpeg
-
 
     raise FileNotFoundError(
         "FFmpeg executable was not found."
@@ -62,7 +114,7 @@ def get_ffmpeg_path() -> str:
 
 
 def run_ffmpeg(
-    command: list[str]
+    command: list[str],
 ) -> None:
 
     print(
@@ -70,90 +122,69 @@ def run_ffmpeg(
     )
 
     print(
-        " ".join(command)
+        " ".join(
+            command
+        )
     )
-
 
     result = subprocess.run(
-
         command,
-
         stdout=subprocess.PIPE,
-
         stderr=subprocess.STDOUT,
-
         text=True,
-
-        check=False
-
+        check=False,
     )
-
 
     print(
         result.stdout
     )
 
-
-    if (
-        result.returncode != 0
-    ):
+    if result.returncode != 0:
 
         raise RuntimeError(
-
-            "FFmpeg failed with "
-            f"exit code {result.returncode}"
-
+            "FFmpeg failed with exit code "
+            + str(
+                result.returncode
+            )
         )
 
 
-def validate_inputs() -> None:
+def validate_inputs(
+    photo: Path,
+) -> None:
 
     required = [
-
-        PHOTO,
+        photo,
         AUDIO,
-        SUBTITLE
-
+        SUBTITLE,
     ]
-
 
     missing = [
-
         str(path)
-
         for path in required
-
         if not path.exists()
-
     ]
-
 
     if missing:
 
         raise FileNotFoundError(
-
             "Missing input files:\n"
-            +
-            "\n".join(
+            + "\n".join(
                 missing
             )
-
         )
 
 
-def render() -> None:
+def render(
+    photo: Path,
+) -> None:
 
     OUTPUT_DIR.mkdir(
-
         parents=True,
-
-        exist_ok=True
-
+        exist_ok=True,
     )
 
-
     ffmpeg = get_ffmpeg_path()
-
 
     print(
         "FFmpeg executable:"
@@ -163,6 +194,13 @@ def render() -> None:
         ffmpeg
     )
 
+    print(
+        "Selected photo:"
+    )
+
+    print(
+        photo
+    )
 
     command = [
 
@@ -170,17 +208,25 @@ def render() -> None:
 
         "-y",
 
+        # ----------------------------------------------------
+        # Input image
+        # ----------------------------------------------------
         "-loop",
         "1",
 
         "-i",
-        str(PHOTO),
+        str(photo),
 
+        # ----------------------------------------------------
+        # Narration
+        # ----------------------------------------------------
         "-i",
         str(AUDIO),
 
+        # ----------------------------------------------------
+        # Video processing
+        # ----------------------------------------------------
         "-vf",
-
         (
             "scale=1080:1920:"
             "force_original_aspect_ratio=decrease,"
@@ -190,18 +236,30 @@ def render() -> None:
             + str(SUBTITLE)
         ),
 
+        # ----------------------------------------------------
+        # Duration
+        # ----------------------------------------------------
         "-t",
         "15",
 
+        # ----------------------------------------------------
+        # Frame rate
+        # ----------------------------------------------------
         "-r",
         "30",
 
+        # ----------------------------------------------------
+        # Mapping
+        # ----------------------------------------------------
         "-map",
         "0:v:0",
 
         "-map",
         "1:a:0",
 
+        # ----------------------------------------------------
+        # Video codec
+        # ----------------------------------------------------
         "-c:v",
         "libx264",
 
@@ -211,24 +269,31 @@ def render() -> None:
         "-crf",
         "23",
 
+        # ----------------------------------------------------
+        # Audio codec
+        # ----------------------------------------------------
         "-c:a",
         "aac",
 
         "-b:a",
         "128k",
 
+        # ----------------------------------------------------
+        # Compatibility
+        # ----------------------------------------------------
         "-pix_fmt",
         "yuv420p",
 
         "-movflags",
         "+faststart",
 
+        # ----------------------------------------------------
+        # Never exceed shortest input
+        # ----------------------------------------------------
         "-shortest",
 
-        str(OUTPUT)
-
+        str(OUTPUT),
     ]
-
 
     run_ffmpeg(
         command
@@ -240,50 +305,61 @@ def inspect_output() -> None:
     if not OUTPUT.exists():
 
         raise RuntimeError(
-            "FFmpeg finished, "
-            "but output.mp4 was not created."
+            "FFmpeg finished but output.mp4 "
+            "was not created."
         )
 
-
     size = OUTPUT.stat().st_size
-
 
     if size <= 0:
 
         raise RuntimeError(
-            "output.mp4 was created "
-            "but is empty."
+            "output.mp4 was created but is empty."
         )
 
-
     print(
-        "SUCCESS:"
+        "SUCCESS: "
+        + str(OUTPUT)
     )
 
     print(
-        OUTPUT
-    )
-
-    print(
-        f"SIZE: {size} bytes"
+        "SIZE: "
+        + str(size)
+        + " bytes"
     )
 
 
 def main() -> None:
 
     print(
+        "=== Select photo ==="
+    )
+
+    photo = get_photo_path()
+
+    print(
+        "Photo selected:"
+    )
+
+    print(
+        photo
+    )
+
+    print(
         "=== Validate input ==="
     )
 
-    validate_inputs()
-
+    validate_inputs(
+        photo
+    )
 
     print(
         "=== Render ==="
     )
 
-    render()
-
+    render(
+        photo
+    )
 
     print(
         "=== Inspect output ==="
