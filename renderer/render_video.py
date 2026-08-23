@@ -13,71 +13,61 @@ ROOT = Path(__file__).resolve().parents[1]
 INPUT_DIR = ROOT / "input"
 OUTPUT_DIR = ROOT / "output"
 
-# ------------------------------------------------------------
-# Google Driveから取得した実画像を優先
-#
-# DRIVE_INPUT_PATH が指定されていれば、それを使用する。
-# 指定されていない場合だけ、旧テスト用 input/photo.png
-# を使用する。
-# ------------------------------------------------------------
 DEFAULT_PHOTO = INPUT_DIR / "photo.png"
-
-AUDIO = INPUT_DIR / "narration.wav"
-SUBTITLE = INPUT_DIR / "subtitle.srt"
+DEFAULT_AUDIO = INPUT_DIR / "narration.wav"
+DEFAULT_SUBTITLE = INPUT_DIR / "subtitle.srt"
 
 OUTPUT = OUTPUT_DIR / "output.mp4"
 
 
-def get_photo_path() -> Path:
-    """
-    動画生成に使用する画像ファイルを決定する。
+def get_input_path(
+    environment_name: str,
+    fallback_path: Path,
+    label: str,
+) -> Path:
 
-    優先順位:
-      1. DRIVE_INPUT_PATH
-      2. input/photo.png
-    """
-
-    drive_input = os.environ.get(
-        "DRIVE_INPUT_PATH"
+    external_path = os.environ.get(
+        environment_name
     )
 
-    if drive_input:
+    if external_path:
+
         path = Path(
-            drive_input
+            external_path
         ).resolve()
 
         if not path.exists():
+
             raise FileNotFoundError(
-                "DRIVE_INPUT_PATH does not exist: "
+                f"{label} does not exist: "
                 + str(path)
             )
 
         if not path.is_file():
+
             raise RuntimeError(
-                "DRIVE_INPUT_PATH is not a file: "
+                f"{label} is not a file: "
                 + str(path)
             )
 
         return path
 
-    if DEFAULT_PHOTO.exists():
-        return DEFAULT_PHOTO
+    if fallback_path.exists():
+
+        return fallback_path
 
     raise FileNotFoundError(
-        "No input photo was found.\n"
-        "Expected either:\n"
-        "- DRIVE_INPUT_PATH\n"
-        "- input/photo.png"
+        f"No {label} was found.\n"
+        f"Expected either:\n"
+        f"- {environment_name}\n"
+        f"- {fallback_path}"
     )
 
 
 def get_ffmpeg_path() -> str:
-    """
-    imageio-ffmpegが提供するFFmpegを優先する。
-    見つからない場合のみPATHを確認する。
-    """
 
     try:
+
         ffmpeg_path = (
             imageio_ffmpeg
             .get_ffmpeg_exe()
@@ -151,12 +141,14 @@ def run_ffmpeg(
 
 def validate_inputs(
     photo: Path,
+    audio: Path,
+    subtitle: Path,
 ) -> None:
 
     required = [
         photo,
-        AUDIO,
-        SUBTITLE,
+        audio,
+        subtitle,
     ]
 
     missing = [
@@ -177,6 +169,8 @@ def validate_inputs(
 
 def render(
     photo: Path,
+    audio: Path,
+    subtitle: Path,
 ) -> None:
 
     OUTPUT_DIR.mkdir(
@@ -202,30 +196,37 @@ def render(
         photo
     )
 
+    print(
+        "Selected audio:"
+    )
+
+    print(
+        audio
+    )
+
+    print(
+        "Selected subtitle:"
+    )
+
+    print(
+        subtitle
+    )
+
     command = [
 
         ffmpeg,
 
         "-y",
 
-        # ----------------------------------------------------
-        # Input image
-        # ----------------------------------------------------
         "-loop",
         "1",
 
         "-i",
         str(photo),
 
-        # ----------------------------------------------------
-        # Narration
-        # ----------------------------------------------------
         "-i",
-        str(AUDIO),
+        str(audio),
 
-        # ----------------------------------------------------
-        # Video processing
-        # ----------------------------------------------------
         "-vf",
         (
             "scale=1080:1920:"
@@ -233,33 +234,21 @@ def render(
             "pad=1080:1920:"
             "(ow-iw)/2:(oh-ih)/2,"
             "subtitles="
-            + str(SUBTITLE)
+            + str(subtitle)
         ),
 
-        # ----------------------------------------------------
-        # Duration
-        # ----------------------------------------------------
         "-t",
         "15",
 
-        # ----------------------------------------------------
-        # Frame rate
-        # ----------------------------------------------------
         "-r",
         "30",
 
-        # ----------------------------------------------------
-        # Mapping
-        # ----------------------------------------------------
         "-map",
         "0:v:0",
 
         "-map",
         "1:a:0",
 
-        # ----------------------------------------------------
-        # Video codec
-        # ----------------------------------------------------
         "-c:v",
         "libx264",
 
@@ -269,27 +258,18 @@ def render(
         "-crf",
         "23",
 
-        # ----------------------------------------------------
-        # Audio codec
-        # ----------------------------------------------------
         "-c:a",
         "aac",
 
         "-b:a",
         "128k",
 
-        # ----------------------------------------------------
-        # Compatibility
-        # ----------------------------------------------------
         "-pix_fmt",
         "yuv420p",
 
         "-movflags",
         "+faststart",
 
-        # ----------------------------------------------------
-        # Never exceed shortest input
-        # ----------------------------------------------------
         "-shortest",
 
         str(OUTPUT),
@@ -332,17 +312,41 @@ def inspect_output() -> None:
 def main() -> None:
 
     print(
-        "=== Select photo ==="
+        "=== Select inputs ==="
     )
 
-    photo = get_photo_path()
+    photo = get_input_path(
+        "DRIVE_INPUT_PATH",
+        DEFAULT_PHOTO,
+        "photo input",
+    )
 
-    print(
-        "Photo selected:"
+    audio = get_input_path(
+        "DRIVE_AUDIO_PATH",
+        DEFAULT_AUDIO,
+        "audio input",
+    )
+
+    subtitle = get_input_path(
+        "DRIVE_SUBTITLE_PATH",
+        DEFAULT_SUBTITLE,
+        "subtitle input",
     )
 
     print(
-        photo
+        "=== Selected inputs ==="
+    )
+
+    print(
+        f"Photo: {photo}"
+    )
+
+    print(
+        f"Audio: {audio}"
+    )
+
+    print(
+        f"Subtitle: {subtitle}"
     )
 
     print(
@@ -350,7 +354,9 @@ def main() -> None:
     )
 
     validate_inputs(
-        photo
+        photo,
+        audio,
+        subtitle,
     )
 
     print(
@@ -358,7 +364,9 @@ def main() -> None:
     )
 
     render(
-        photo
+        photo,
+        audio,
+        subtitle,
     )
 
     print(
@@ -369,5 +377,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-
     main()
