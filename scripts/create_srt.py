@@ -19,14 +19,6 @@ def require_env(name: str) -> str:
 
 
 def format_timestamp(seconds: float) -> str:
-    """
-    秒数をSRT形式へ変換する。
-
-    例:
-        3.5
-        -> 00:00:03,500
-    """
-
     if seconds < 0:
         raise ValueError(
             "Subtitle time cannot be negative."
@@ -53,18 +45,11 @@ def format_timestamp(seconds: float) -> str:
     )
 
 
-def strip_code_fence(raw: str) -> str:
-    """
-    ```json
-    ...
-    ```
-    のコードフェンスを除去する。
-    """
-
-    text = raw.strip()
+def strip_code_fence(text: str) -> str:
+    text = text.strip()
 
     match = re.fullmatch(
-        r"```(?:json)?\s*(.*?)\s*```",
+        r"```(?:json|javascript|js)?\s*(.*?)\s*```",
         text,
         flags=re.DOTALL | re.IGNORECASE,
     )
@@ -75,179 +60,212 @@ def strip_code_fence(raw: str) -> str:
     return text
 
 
-def extract_json_value(raw: str) -> Any:
-    """
-    JSON文字列から実データを抽出する。
-
-    対応:
-      1. 配列
-      2. JSONオブジェクト
-      3. {"subtitle_lines":[...]}
-      4. Script全体JSON
-      5. コードフェンス付きJSON
-      6. JSONの前後に説明文があるケース
-    """
-
-    text = strip_code_fence(raw)
-
-    # --------------------------------------------------------
-    # 1. まず完全なJSONとして解析
-    # --------------------------------------------------------
+def try_parse_json(text: str) -> Any | None:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        pass
+        return None
 
-    # --------------------------------------------------------
-    # 2. JSONDecoder.raw_decodeで先頭JSONだけ読む
-    #
-    # 例:
-    #   [{"text":"..."}] 余分な文字
-    # --------------------------------------------------------
-    decoder = json.JSONDecoder()
 
-    try:
-        value, end_index = decoder.raw_decode(text)
+def extract_json_candidates(
+    raw: str,
+) -> list[Any]:
+    """
+    入力文字列からJSON候補を複数抽出する。
 
-        trailing = text[end_index:].strip()
+    対応:
+    - JSONそのもの
+    - ```json ... ```
+    - JSONの前後にログや説明文がある
+    - JSON配列だけ
+    - JSONオブジェクトだけ
+    """
 
-        if not trailing:
-            return value
+    candidates: list[Any] = []
 
-        # 後ろに余計な文字がある場合でも、
-        # 読み取れたJSONが有効なら採用する。
-        if isinstance(value, (list, dict)):
-            return value
-
-    except json.JSONDecodeError:
-        pass
-
-    # --------------------------------------------------------
-    # 3. 文字列中からJSON配列を探す
-    # --------------------------------------------------------
-    array_start = text.find("[")
-
-    if array_start >= 0:
-
-        try:
-            value, end_index = decoder.raw_decode(
-                text[array_start:]
-            )
-
-            if isinstance(value, list):
-                return value
-
-        except json.JSONDecodeError:
-            pass
-
-    # --------------------------------------------------------
-    # 4. 文字列中からJSONオブジェクトを探す
-    # --------------------------------------------------------
-    object_start = text.find("{")
-
-    if object_start >= 0:
-
-        try:
-            value, end_index = decoder.raw_decode(
-                text[object_start:]
-            )
-
-            if isinstance(value, dict):
-                return value
-
-        except json.JSONDecodeError:
-            pass
-
-    raise RuntimeError(
-        "SUBTITLE_JSONから有効なJSONを抽出できませんでした。"
+    cleaned = strip_code_fence(
+        raw
     )
 
+    direct = try_parse_json(
+        cleaned
+    )
 
-def extract_subtitle_items(raw: str) -> list[dict]:
+    if direct is not None:
+        candidates.append(
+            direct
+        )
+
+    decoder = json.JSONDecoder()
+
+    # --------------------------------------------------------
+    # 文字列の中にあるJSONオブジェクト/配列を順番に探す
+    # --------------------------------------------------------
+    positions = []
+
+    for char in ("{", "["):
+        start = 0
+
+        while True:
+            index = cleaned.find(
+                char,
+                start
+            )
+
+            if index < 0:
+                break
+
+            positions.append(
+                index
+            )
+
+            start = index + 1
+
+    for position in sorted(
+        set(positions)
+    ):
+        fragment = cleaned[position:]
+
+        try:
+            value, _ = decoder.raw_decode(
+                fragment
+            )
+
+        except json.JSONDecodeError:
+            continue
+
+        if value is not None:
+            candidates.append(
+                value
+            )
+
+    return candidates
+
+
+def find_subtitle_lines_recursive(
+    value: Any,
+) -> list[dict] | None:
     """
-    以下のどれでもsubtitle_linesを抽出する。
+    JSON構造を再帰的に探索し、
+    subtitle_lines を発見する。
 
-    配列:
-      [...]
-
-    オブジェクト:
-      {"subtitle_lines":[...]}
-
-    Script全体:
+    例:
       {
-        "success": true,
         "script": {
           "subtitle_lines": [...]
         }
       }
+
+    だけでなく、さらに深い階層にも対応する。
     """
 
-    data = extract_json_value(raw)
+    if isinstance(
+        value,
+        dict,
+    ):
 
-    # --------------------------------------------------------
-    # 1. 直接配列
-    # --------------------------------------------------------
-    if isinstance(data, list):
+        if "subtitle_lines" in value:
 
-        return data
-
-    # --------------------------------------------------------
-    # 2. オブジェクト
-    # --------------------------------------------------------
-    if isinstance(data, dict):
-
-        subtitle_lines = data.get(
-            "subtitle_lines"
-        )
-
-        if isinstance(
-            subtitle_lines,
-            list,
-        ):
-            return subtitle_lines
-
-        # success + script の形式
-        script = data.get(
-            "script"
-        )
-
-        if isinstance(
-            script,
-            dict,
-        ):
-
-            subtitle_lines = script.get(
-                "subtitle_lines"
+            subtitle_lines = (
+                value["subtitle_lines"]
             )
 
             if isinstance(
                 subtitle_lines,
                 list,
             ):
+
                 return subtitle_lines
 
-        # script自体が直接入っているケース
-        nested_script = data.get(
-            "data"
-        )
+        for child in value.values():
 
-        if isinstance(
-            nested_script,
-            dict,
-        ):
-
-            subtitle_lines = nested_script.get(
-                "subtitle_lines"
+            result = (
+                find_subtitle_lines_recursive(
+                    child
+                )
             )
 
-            if isinstance(
-                subtitle_lines,
-                list,
+            if result is not None:
+                return result
+
+        return None
+
+    if isinstance(
+        value,
+        list,
+    ):
+
+        # 配列そのものが字幕項目の場合
+        if (
+            value
+            and all(
+                isinstance(
+                    item,
+                    dict,
+                )
+                for item in value
+            )
+        ):
+
+            if all(
+                (
+                    "text" in item
+                    and
+                    (
+                        "start_seconds"
+                        in item
+                    )
+                    and
+                    (
+                        "end_seconds"
+                        in item
+                    )
+                )
+                for item in value
             ):
-                return subtitle_lines
+
+                return value
+
+        for child in value:
+
+            result = (
+                find_subtitle_lines_recursive(
+                    child
+                )
+            )
+
+            if result is not None:
+                return result
+
+    return None
+
+
+def extract_subtitle_items(
+    raw: str,
+) -> list[dict]:
+    candidates = extract_json_candidates(
+        raw
+    )
+
+    for candidate in candidates:
+
+        result = (
+            find_subtitle_lines_recursive(
+                candidate
+            )
+        )
+
+        if result is not None:
+            return result
 
     raise RuntimeError(
-        "SUBTITLE_JSON内にsubtitle_lines配列が見つかりません。"
+        "SUBTITLE_JSONからsubtitle_lines配列を取得できませんでした。"
+        "\n"
+        "今回受け取った入力長: "
+        + str(len(raw))
+        + " 文字"
+        + "\n"
+        "入力にsubtitle_linesが含まれているか確認してください。"
     )
 
 
@@ -260,6 +278,7 @@ def validate_subtitle_item(
         item,
         dict,
     ):
+
         raise RuntimeError(
             f"Subtitle item {index} "
             "must be an object."
@@ -273,12 +292,14 @@ def validate_subtitle_item(
     ).strip()
 
     if not text:
+
         raise RuntimeError(
             f"Subtitle item {index} "
             "has empty text."
         )
 
     try:
+
         start_seconds = float(
             item["start_seconds"]
         )
@@ -337,11 +358,13 @@ def build_srt(
         start=1,
     ):
 
-        text, start_seconds, end_seconds = (
-            validate_subtitle_item(
-                item,
-                index,
-            )
+        (
+            text,
+            start_seconds,
+            end_seconds,
+        ) = validate_subtitle_item(
+            item,
+            index,
         )
 
         block = (
@@ -356,9 +379,12 @@ def build_srt(
             block
         )
 
-    return "\n".join(
-        blocks
-    ) + "\n"
+    return (
+        "\n".join(
+            blocks
+        )
+        + "\n"
+    )
 
 
 def main() -> None:
@@ -374,8 +400,23 @@ def main() -> None:
         )
     )
 
-    subtitle_items = extract_subtitle_items(
-        raw
+    print(
+        "Reading subtitle input..."
+    )
+
+    print(
+        f"Input length: {len(raw)} characters"
+    )
+
+    subtitle_items = (
+        extract_subtitle_items(
+            raw
+        )
+    )
+
+    print(
+        f"Subtitle lines found: "
+        f"{len(subtitle_items)}"
     )
 
     srt_text = build_srt(
@@ -411,11 +452,6 @@ def main() -> None:
 
     print(
         f"Output: {output_path}"
-    )
-
-    print(
-        f"Subtitle count: "
-        f"{len(subtitle_items)}"
     )
 
     print()
