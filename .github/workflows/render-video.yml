@@ -19,34 +19,34 @@ jobs:
 
     steps:
 
-      # -------------------------------------------------------
-      # 1. Checkout
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 1. Repository
+      # ------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v7
 
 
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       # 2. Python
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
 
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       # 3. Dependencies
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install imageio-ffmpeg requests
 
 
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       # 4. Syntax check
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       - name: Check Python syntax
         run: |
           set -euxo pipefail
@@ -63,9 +63,9 @@ jobs:
           echo "Python syntax check passed."
 
 
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       # 5. OAuth secrets
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       - name: Verify Google OAuth secrets
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -81,9 +81,9 @@ jobs:
           echo "Google OAuth secrets are available."
 
 
-      # -------------------------------------------------------
-      # 6. Repository information
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 6. Repository structure
+      # ------------------------------------------------------
       - name: Show repository files
         run: |
           set -euxo pipefail
@@ -100,13 +100,13 @@ jobs:
           ls -lah renderer || true
 
           echo
-          echo "=== Local input ==="
+          echo "=== Input ==="
           ls -lah input || true
 
 
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       # 7. List Google Drive files
-      # -------------------------------------------------------
+      # ------------------------------------------------------
       - name: List Google Drive files
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -118,10 +118,10 @@ jobs:
           python3 scripts/list_drive_files.py
 
 
-      # -------------------------------------------------------
-      # 8. Download selected Google Drive file by name
-      # -------------------------------------------------------
-      - name: Download Google Drive test file
+      # ------------------------------------------------------
+      # 8. Download the requested Google Drive file
+      # ------------------------------------------------------
+      - name: Download Google Drive input
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -133,59 +133,42 @@ jobs:
           python3 scripts/download_drive_file.py
 
 
-      # -------------------------------------------------------
-      # 9. Verify downloaded Drive file
-      # -------------------------------------------------------
-      - name: Check downloaded Drive file
+      # ------------------------------------------------------
+      # 9. Verify downloaded file
+      # ------------------------------------------------------
+      - name: Verify downloaded Drive input
         run: |
           set -euxo pipefail
 
           test -f work/drive_input
 
-          echo "Downloaded file:"
+          echo "=== Downloaded Drive input ==="
           ls -lh work/drive_input
 
           echo
-          echo "File type:"
+          echo "=== File type ==="
           file work/drive_input
 
 
-      # -------------------------------------------------------
-      # 10. Local test files for No.15-A
-      # -------------------------------------------------------
-      - name: Verify local video test files
+      # ------------------------------------------------------
+      # 10. Verify required narration and subtitle
+      #
+      # 現在はNo.15-AのテストWAV/SRTを使用。
+      # 次工程でGoogle Driveから実データへ変更する。
+      # ------------------------------------------------------
+      - name: Verify narration and subtitle
         run: |
           set -euxo pipefail
 
-          test -f input/photo.png
           test -f input/narration.wav
           test -f input/subtitle.srt
 
-          echo "Local video test files exist."
+          echo "Narration and subtitle files exist."
 
 
-      # -------------------------------------------------------
-      # 11. Inspect local files
-      # -------------------------------------------------------
-      - name: Inspect local input files
-        run: |
-          set -euxo pipefail
-
-          echo "=== Image ==="
-          file input/photo.png
-
-          echo
-          echo "=== Audio ==="
-          file input/narration.wav
-
-          echo
-          echo "=== Subtitle ==="
-          file input/subtitle.srt
-
-
-      # -------------------------------------------------------
-      # 12. FFmpeg verification
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 11. Verify FFmpeg
+      # ------------------------------------------------------
       - name: Verify FFmpeg binary
         run: |
           set -euxo pipefail
@@ -200,7 +183,10 @@ jobs:
           print(ffmpeg)
 
           result = subprocess.run(
-              [ffmpeg, "-version"],
+              [
+                  ffmpeg,
+                  "-version",
+              ],
               stdout=subprocess.PIPE,
               stderr=subprocess.STDOUT,
               text=True,
@@ -212,36 +198,41 @@ jobs:
           PY
 
 
-      # -------------------------------------------------------
-      # 13. No.15-A FFmpeg render test
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 12. Render
+      # ------------------------------------------------------
       - name: FFmpeg Render
+        env:
+          DRIVE_INPUT_PATH: ${{ github.workspace }}/work/drive_input
         run: |
           set -euxo pipefail
+
+          echo "=== Selected Drive input ==="
+          ls -lh "$DRIVE_INPUT_PATH"
 
           python3 renderer/render_video.py
 
 
-      # -------------------------------------------------------
-      # 14. Inspect generated MP4
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 13. Inspect output
+      # ------------------------------------------------------
       - name: Inspect output
         run: |
           set -euxo pipefail
 
           test -f output/output.mp4
 
-          echo "=== Output file ==="
+          echo "=== Output ==="
           ls -lh output/output.mp4
 
           echo
-          echo "=== Output type ==="
+          echo "=== File type ==="
           file output/output.mp4
 
 
-      # -------------------------------------------------------
-      # 15. Upload MP4
-      # -------------------------------------------------------
+      # ------------------------------------------------------
+      # 14. Upload MP4
+      # ------------------------------------------------------
       - name: Upload rendered video artifact
         uses: actions/upload-artifact@v7
         with:
